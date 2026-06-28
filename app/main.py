@@ -1,22 +1,41 @@
-from fastapi import FastAPI
-from app.routers import wallets
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
 
-app = FastAPI(
-    title="Web3 Reputation API",
-    description="Proof-of-Human Trust API for wallet reputation scoring",
-    version="0.1.0"
-)
+from .database import Base, engine, get_db
+from .models import Wallet
+from .schemas import WalletCreate, WalletResponse
 
-app.include_router(wallets.router)
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+
 
 @app.get("/")
 def root():
-    return {
-        "message": "Web3 Reputation API is running"
-    }
+    return {"message": "Backend is running"}
+
 
 @app.get("/health")
 def health_check():
-    return {
-        "status": "healthy"
-    }
+    return {"status": "ok"}
+
+
+@app.post("/wallets/ingest", response_model=WalletResponse)
+def ingest_wallet(wallet: WalletCreate, db: Session = Depends(get_db)):
+    existing_wallet = db.query(Wallet).filter(
+        Wallet.wallet_address == wallet.wallet_address
+    ).first()
+
+    if existing_wallet:
+        raise HTTPException(status_code=400, detail="Wallet already exists")
+
+    new_wallet = Wallet(
+        wallet_address=wallet.wallet_address,
+        chain=wallet.chain
+    )
+
+    db.add(new_wallet)
+    db.commit()
+    db.refresh(new_wallet)
+
+    return new_wallet
