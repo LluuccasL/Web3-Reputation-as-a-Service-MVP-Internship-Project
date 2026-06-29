@@ -1,12 +1,14 @@
-from sqlalchemy import Column, Integer, String, DateTime
-from sqlalchemy.sql import func
-from .database import Base
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Integer, String
+
+from app.database import Base
 
 
 class Wallet(Base):
     __tablename__ = "wallets"
 
     id = Column(Integer, primary_key=True, index=True)
-    wallet_address = Column(String, unique=True, index=True, nullable=False)
-    chain = Column(String, default="ethereum")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    address = Column(String, unique=True, index=True, nullable=False)
+    last_seen_block = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

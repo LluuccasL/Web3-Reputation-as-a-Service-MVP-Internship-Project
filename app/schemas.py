@@ -1,15 +1,13 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
-class WalletCreate(BaseModel):
-    wallet_address: str
-    chain: str = "ethereum"
+class WalletIngestRequest(BaseModel):
+    address: str
 
 
 class WalletResponse(BaseModel):
     id: int
-    wallet_address: str
-    chain: str
-
-    class Config:
-        from_attributes = True
+    address: str
+    last_seen_block: Optional[int] = None
