@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -60,6 +61,13 @@ WalletAddress = Annotated[
     StringConstraints(
         strip_whitespace=True,
         pattern=r"^0x[a-fA-F0-9]{40}$",
+    ),
+]
+
+HexDigest = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^[a-f0-9]{64}$",
     ),
 ]
 
@@ -141,3 +149,77 @@ class TrustResponse(BaseModel):
     scored_at: datetime = Field(
         description="UTC date and time when the reputation score was calculated."
     )
+
+
+# ---------------------------------------------------------------------------
+# Week 3: Signed proof schemas
+# ---------------------------------------------------------------------------
+
+class GenerateProofRequest(BaseModel):
+    """Request body for generating a signed wallet trust proof."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "valid_for_hours": 24,
+            }
+        },
+    )
+
+    wallet_address: WalletAddress = Field(
+        description="Ethereum wallet address to evaluate."
+    )
+
+    valid_for_hours: int = Field(
+        default=24,
+        ge=1,
+        le=168,
+        description="Number of hours before the proof expires.",
+    )
+
+
+class ProofPayload(BaseModel):
+    """Claims protected by the proof signature."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "proof_id": "550e8400-e29b-41d4-a716-446655440000",
+                "wallet_hash": (
+                    "1234567890abcdef1234567890abcdef"
+                    "1234567890abcdef1234567890abcdef"
+                ),
+                "human_likelihood": "high",
+                "trust_tier": "gold",
+                "confidence_score": 0.85,
+                "issued_at": "2026-07-11T08:00:00Z",
+                "expires_at": "2026-07-12T08:00:00Z",
+            }
+        },
+    )
+
+    proof_id: UUID
+    wallet_hash: HexDigest
+
+    human_likelihood: HumanLikelihood
+    trust_tier: TrustTier
+
+    confidence_score: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+
+    issued_at: datetime
+    expires_at: datetime
+
+
+class GeneratedProofResponse(BaseModel):
+    """Signed proof returned by the proof-generation service."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    proof: ProofPayload
+    signature: HexDigest
