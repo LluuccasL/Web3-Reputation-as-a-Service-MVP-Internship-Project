@@ -60,157 +60,30 @@ def get_wallet_or_404(wallet_address: str, db: Session) -> Wallet:
     return wallet
 
 
-@router.post("/ingest", response_model=WalletIngestResponse)
-def ingest_wallet(payload: WalletIngestRequest, db: Session = Depends(get_db)):
-    address = normalize_address(payload.address)
+def calculate_wallet_reputation(
+    address: str,
+    max_count: int = 10,
+) -> WalletReputationResponse:
+    """
+    Calculate the Week 2 wallet reputation result.
 
-    if not is_valid_eth_address(address):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Ethereum wallet address. Address must start with 0x and be 42 characters long.",
-        )
-
-    try:
-        latest_block = get_latest_block_number()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch latest block from Alchemy: {str(e)}",
-        )
-
-    existing_wallet = (
-        db.query(Wallet)
-        .filter(Wallet.wallet_address == address)
-        .first()
-    )
-
-    if existing_wallet:
-        existing_wallet.last_seen_block = latest_block
-        db.commit()
-        db.refresh(existing_wallet)
-
-        return WalletIngestResponse(
-            status="already_exists",
-            address=existing_wallet.wallet_address,
-            last_seen_block=existing_wallet.last_seen_block,
-        )
-
-    new_wallet = Wallet(
-        wallet_address=address,
-        source="alchemy",
-        last_seen_block=latest_block,
-    )
-
-    db.add(new_wallet)
-    db.commit()
-    db.refresh(new_wallet)
-
-    return WalletIngestResponse(
-        status="ingested",
-        address=new_wallet.wallet_address,
-        last_seen_block=new_wallet.last_seen_block,
-    )
-
-
-@router.get("", response_model=list[WalletResponse])
-def list_wallets(db: Session = Depends(get_db)):
-    wallets = db.query(Wallet).order_by(Wallet.id.desc()).all()
-    return [wallet_to_response(wallet) for wallet in wallets]
-
-
-@router.get("/{wallet_address}", response_model=WalletResponse)
-def get_wallet(wallet_address: str, db: Session = Depends(get_db)):
-    wallet = get_wallet_or_404(wallet_address, db)
-    return wallet_to_response(wallet)
-
-
-@router.delete("/{wallet_address}")
-def delete_wallet(wallet_address: str, db: Session = Depends(get_db)):
-    wallet = get_wallet_or_404(wallet_address, db)
-
-    db.delete(wallet)
-    db.commit()
-
-    return {
-        "status": "deleted",
-        "address": wallet.wallet_address,
-    }
-
-
-@router.get("/{wallet_address}/balance", response_model=WalletBalanceResponse)
-def get_wallet_balance_route(wallet_address: str):
-    address = normalize_address(wallet_address)
-
-    if not is_valid_eth_address(address):
-        raise HTTPException(status_code=400, detail="Invalid Ethereum wallet address")
-
-    try:
-        return get_wallet_balance(address)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch wallet balance: {str(e)}",
-        )
-
-
-@router.get("/{wallet_address}/transfers", response_model=WalletTransfersResponse)
-def get_wallet_transfers_route(wallet_address: str, max_count: int = 10):
-    address = normalize_address(wallet_address)
-
-    if not is_valid_eth_address(address):
-        raise HTTPException(status_code=400, detail="Invalid Ethereum wallet address")
-
-    if max_count < 1 or max_count > 50:
-        raise HTTPException(
-            status_code=400,
-            detail="max_count must be between 1 and 50",
-        )
-
-    try:
-        transfers = get_asset_transfers_for_wallet(address, max_count=max_count)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch wallet transfers: {str(e)}",
-        )
-
-    return WalletTransfersResponse(
-        address=address,
-        count=len(transfers),
-        transfers=transfers,
-    )
-
-
-@router.get("/{wallet_address}/reputation", response_model=WalletReputationResponse)
-def get_wallet_reputation_route(wallet_address: str, max_count: int = 10):
-    address = normalize_address(wallet_address)
-
-    if not is_valid_eth_address(address):
-        raise HTTPException(status_code=400, detail="Invalid Ethereum wallet address")
-
-    if max_count < 1 or max_count > 50:
-        raise HTTPException(
-            status_code=400,
-            detail="max_count must be between 1 and 50",
-        )
-
-    try:
-        balance = get_wallet_balance(address)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch wallet balance: {str(e)}",
-        )
+    This function is shared by the original reputation endpoint and the
+    Week 3 public trust endpoint so the score is calculated in one place.
+    """
+    balance = get_wallet_balance(address)
 
     transfers = []
     transfer_status = "available"
     transfer_error = None
 
     try:
-        transfers = get_asset_transfers_for_wallet(address, max_count=max_count)
-    except Exception as e:
+        transfers = get_asset_transfers_for_wallet(
+            address,
+            max_count=max_count,
+        )
+    except Exception as exc:
         transfer_status = "unavailable"
-        transfer_error = str(e)
+        transfer_error = str(exc)
 
     balance_eth = float(balance["balance_eth"])
     transfer_count = len(transfers)
@@ -255,8 +128,195 @@ def get_wallet_reputation_route(wallet_address: str, max_count: int = 10):
             "transfer_status": transfer_status,
             "transfer_error": transfer_error,
             "network": balance["network"],
-            "note": "Partial score used because transfer data was unavailable."
-            if transfer_status == "unavailable"
-            else "Full score used.",
+            "note": (
+                "Partial score used because transfer data was unavailable."
+                if transfer_status == "unavailable"
+                else "Full score used."
+            ),
         },
     )
+
+
+@router.post("/ingest", response_model=WalletIngestResponse)
+def ingest_wallet(
+    payload: WalletIngestRequest,
+    db: Session = Depends(get_db),
+):
+    address = normalize_address(payload.address)
+
+    if not is_valid_eth_address(address):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid Ethereum wallet address. "
+                "Address must start with 0x and be 42 characters long."
+            ),
+        )
+
+    try:
+        latest_block = get_latest_block_number()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch latest block from Alchemy: {str(exc)}",
+        ) from exc
+
+    existing_wallet = (
+        db.query(Wallet)
+        .filter(Wallet.wallet_address == address)
+        .first()
+    )
+
+    if existing_wallet:
+        existing_wallet.last_seen_block = latest_block
+        db.commit()
+        db.refresh(existing_wallet)
+
+        return WalletIngestResponse(
+            status="already_exists",
+            address=existing_wallet.wallet_address,
+            last_seen_block=existing_wallet.last_seen_block,
+        )
+
+    new_wallet = Wallet(
+        wallet_address=address,
+        source="alchemy",
+        last_seen_block=latest_block,
+    )
+
+    db.add(new_wallet)
+    db.commit()
+    db.refresh(new_wallet)
+
+    return WalletIngestResponse(
+        status="ingested",
+        address=new_wallet.wallet_address,
+        last_seen_block=new_wallet.last_seen_block,
+    )
+
+
+@router.get("", response_model=list[WalletResponse])
+def list_wallets(db: Session = Depends(get_db)):
+    wallets = db.query(Wallet).order_by(Wallet.id.desc()).all()
+    return [wallet_to_response(wallet) for wallet in wallets]
+
+
+@router.get("/{wallet_address}", response_model=WalletResponse)
+def get_wallet(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    wallet = get_wallet_or_404(wallet_address, db)
+    return wallet_to_response(wallet)
+
+
+@router.delete("/{wallet_address}")
+def delete_wallet(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    wallet = get_wallet_or_404(wallet_address, db)
+
+    db.delete(wallet)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "address": wallet.wallet_address,
+    }
+
+
+@router.get(
+    "/{wallet_address}/balance",
+    response_model=WalletBalanceResponse,
+)
+def get_wallet_balance_route(wallet_address: str):
+    address = normalize_address(wallet_address)
+
+    if not is_valid_eth_address(address):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Ethereum wallet address",
+        )
+
+    try:
+        return get_wallet_balance(address)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch wallet balance: {str(exc)}",
+        ) from exc
+
+
+@router.get(
+    "/{wallet_address}/transfers",
+    response_model=WalletTransfersResponse,
+)
+def get_wallet_transfers_route(
+    wallet_address: str,
+    max_count: int = 10,
+):
+    address = normalize_address(wallet_address)
+
+    if not is_valid_eth_address(address):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Ethereum wallet address",
+        )
+
+    if max_count < 1 or max_count > 50:
+        raise HTTPException(
+            status_code=400,
+            detail="max_count must be between 1 and 50",
+        )
+
+    try:
+        transfers = get_asset_transfers_for_wallet(
+            address,
+            max_count=max_count,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch wallet transfers: {str(exc)}",
+        ) from exc
+
+    return WalletTransfersResponse(
+        address=address,
+        count=len(transfers),
+        transfers=transfers,
+    )
+
+
+@router.get(
+    "/{wallet_address}/reputation",
+    response_model=WalletReputationResponse,
+)
+def get_wallet_reputation_route(
+    wallet_address: str,
+    max_count: int = 10,
+):
+    address = normalize_address(wallet_address)
+
+    if not is_valid_eth_address(address):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Ethereum wallet address",
+        )
+
+    if max_count < 1 or max_count > 50:
+        raise HTTPException(
+            status_code=400,
+            detail="max_count must be between 1 and 50",
+        )
+
+    try:
+        return calculate_wallet_reputation(
+            address,
+            max_count=max_count,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch wallet balance: {str(exc)}",
+        ) from exc

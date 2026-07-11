@@ -1,15 +1,14 @@
 from fastapi import FastAPI
 
 from app.database import Base, engine
-from app.routers import chain
-from app.routers import wallets
+from app.routers import chain, trust, wallets
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Web3 Trust API",
     description="Proof-of-Human Trust API for wallet reputation scoring",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 
@@ -25,3 +24,4 @@ def health_check():
 
 app.include_router(chain.router)
 app.include_router(wallets.router)
+app.include_router(trust.router)
