@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Security
 
 from app.routers.wallets import (
     calculate_wallet_reputation,
     normalize_address,
 )
+from app.security.api_key import require_api_key
 from app.schemas import (
     CheckWalletRequest,
     GeneratedProofResponse,
@@ -97,7 +98,10 @@ def calculate_trust_result(address: str) -> TrustResponse:
         }
     },
 )
-def check_wallet(payload: CheckWalletRequest):
+def check_wallet(
+    payload: CheckWalletRequest,
+    _api_key: str = Security(require_api_key),
+):
     address = normalize_address(payload.wallet_address)
 
     try:
@@ -133,6 +137,7 @@ def check_wallet(payload: CheckWalletRequest):
 )
 def generate_proof(
     payload: GenerateProofRequest,
+    _api_key: str = Security(require_api_key),
 ):
     address = normalize_address(payload.wallet_address)
 

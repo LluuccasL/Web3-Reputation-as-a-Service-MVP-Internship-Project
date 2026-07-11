@@ -9,6 +9,7 @@ from app.main import app
 
 
 TEST_DATABASE_URL = "sqlite://"
+TEST_API_KEY = "week3-test-api-key-that-is-not-used-in-production"
 
 test_engine = create_engine(
     TEST_DATABASE_URL,
@@ -24,11 +25,17 @@ TestingSessionLocal = sessionmaker(
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch):
     Base.metadata.create_all(bind=test_engine)
+
+    monkeypatch.setenv(
+        "API_KEYS",
+        TEST_API_KEY,
+    )
 
     def override_get_db():
         db = TestingSessionLocal()
+
         try:
             yield db
         finally:
@@ -37,6 +44,10 @@ def client():
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
+        test_client.headers.update(
+            {"X-API-Key": TEST_API_KEY}
+        )
+
         yield test_client
 
     app.dependency_overrides.clear()
