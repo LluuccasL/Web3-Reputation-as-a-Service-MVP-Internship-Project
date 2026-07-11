@@ -8,11 +8,15 @@ from app.routers.wallets import (
 )
 from app.schemas import (
     CheckWalletRequest,
+    GeneratedProofResponse,
+    GenerateProofRequest,
     HumanLikelihood,
     TrustResponse,
     TrustTier,
     WalletReputationResponse,
 )
+from app.services.proof_service import create_signed_proof
+
 
 router = APIRouter(tags=["trust"])
 
@@ -68,6 +72,19 @@ def reputation_to_trust_response(
     )
 
 
+def calculate_trust_result(address: str) -> TrustResponse:
+    """
+    Run the shared Week 2 reputation calculation and convert it into
+    the Week 3 public trust format.
+    """
+    reputation = calculate_wallet_reputation(
+        address,
+        max_count=10,
+    )
+
+    return reputation_to_trust_response(reputation)
+
+
 @router.post(
     "/check_wallet",
     response_model=TrustResponse,
@@ -84,10 +101,7 @@ def check_wallet(payload: CheckWalletRequest):
     address = normalize_address(payload.wallet_address)
 
     try:
-        reputation = calculate_wallet_reputation(
-            address,
-            max_count=10,
-        )
+        return calculate_trust_result(address)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=503,
@@ -99,4 +113,59 @@ def check_wallet(payload: CheckWalletRequest):
             detail="Failed to calculate wallet trust.",
         ) from exc
 
-    return reputation_to_trust_response(reputation)
+
+@router.post(
+    "/generate_proof",
+    response_model=GeneratedProofResponse,
+    summary="Generate a signed wallet trust proof",
+    responses={
+        500: {
+            "description": (
+                "The proof service is unavailable or not configured."
+            )
+        },
+        503: {
+            "description": (
+                "The blockchain provider is temporarily unavailable."
+            )
+        },
+    },
+)
+def generate_proof(
+    payload: GenerateProofRequest,
+):
+    address = normalize_address(payload.wallet_address)
+
+    try:
+        trust_result = calculate_trust_result(address)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Blockchain provider unavailable: {str(exc)}",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to calculate wallet trust.",
+        ) from exc
+
+    try:
+        return create_signed_proof(
+            trust_result=trust_result,
+            valid_for_hours=payload.valid_for_hours,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Proof service is not configured correctly.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate proof.",
+        ) from exc
