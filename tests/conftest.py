@@ -52,3 +52,14 @@ def client(monkeypatch):
 
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=test_engine)
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limit_state():
+    from app.middleware.rate_limit import rate_limiter
+
+    rate_limiter.clear()
+
+    yield
+
+    rate_limiter.clear()

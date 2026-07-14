@@ -1,8 +1,10 @@
 import os
 import secrets
 
-from fastapi import HTTPException, Security, status
+from fastapi import Security
 from fastapi.security import APIKeyHeader
+
+from app.errors import APIError
 
 
 API_KEY_HEADER_NAME = "X-API-Key"
@@ -28,9 +30,10 @@ def get_configured_api_keys() -> list[str]:
     ]
 
     if not api_keys:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="API key authentication is not configured.",
+        raise APIError(
+            status_code=500,
+            code="API_KEY_NOT_CONFIGURED",
+            message="API key authentication is not configured.",
         )
 
     return api_keys
@@ -43,9 +46,10 @@ def require_api_key(
     Require a valid X-API-Key request header.
     """
     if not supplied_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key.",
+        raise APIError(
+            status_code=401,
+            code="INVALID_API_KEY",
+            message="Invalid or missing API key.",
         )
 
     configured_api_keys = get_configured_api_keys()
@@ -57,7 +61,8 @@ def require_api_key(
         ):
             return supplied_api_key
 
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or missing API key.",
+    raise APIError(
+        status_code=401,
+        code="INVALID_API_KEY",
+        message="Invalid or missing API key.",
     )

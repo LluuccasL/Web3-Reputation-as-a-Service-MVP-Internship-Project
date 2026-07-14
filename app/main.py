@@ -1,14 +1,57 @@
+import logging
+import os
+
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from app.database import Base, engine
+from app.errors import (
+    APIError,
+    api_error_handler,
+    validation_error_handler,
+)
+from app.middleware.request_logging import (
+    request_logging_middleware,
+)
 from app.routers import chain, trust, wallets
+
+
+log_level_name = os.getenv(
+    "LOG_LEVEL",
+    "INFO",
+).upper()
+
+log_level = getattr(
+    logging,
+    log_level_name,
+    logging.INFO,
+)
+
+logging.basicConfig(
+    level=log_level,
+    format="%(message)s",
+)
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Web3 Trust API",
     description="Proof-of-Human Trust API for wallet reputation scoring",
-    version="0.3.0",
+    version="0.4.0",
+)
+
+app.add_exception_handler(
+    APIError,
+    api_error_handler,
+)
+
+app.add_exception_handler(
+    RequestValidationError,
+    validation_error_handler,
+)
+
+app.middleware("http")(
+    request_logging_middleware
 )
 
 

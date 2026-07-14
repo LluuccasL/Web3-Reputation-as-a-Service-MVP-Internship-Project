@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Security
+from fastapi import APIRouter, Depends
 
+from app.errors import APIError
+from app.middleware.rate_limit import enforce_rate_limit
 from app.routers.wallets import (
     calculate_wallet_reputation,
     normalize_address,
 )
-from app.security.api_key import require_api_key
 from app.schemas import (
     CheckWalletRequest,
     GeneratedProofResponse,
@@ -26,8 +27,7 @@ def reputation_to_trust_response(
     reputation: WalletReputationResponse,
 ) -> TrustResponse:
     """
-    Convert the internal Week 2 reputation result into the privacy-safe
-    public response used by the Week 3 API.
+    Convert the internal Week 2 result into the public Week 3 response.
     """
     score = max(0, min(reputation.score, 100))
 
@@ -45,7 +45,9 @@ def reputation_to_trust_response(
     risk_flags: list[str] = []
 
     try:
-        balance_eth = float(signals.get("balance_eth", 0))
+        balance_eth = float(
+            signals.get("balance_eth", 0)
+        )
     except (TypeError, ValueError):
         balance_eth = 0.0
 
@@ -73,11 +75,9 @@ def reputation_to_trust_response(
     )
 
 
-def calculate_trust_result(address: str) -> TrustResponse:
-    """
-    Run the shared Week 2 reputation calculation and convert it into
-    the Week 3 public trust format.
-    """
+def calculate_trust_result(
+    address: str,
+) -> TrustResponse:
     reputation = calculate_wallet_reputation(
         address,
         max_count=10,
@@ -91,30 +91,38 @@ def calculate_trust_result(address: str) -> TrustResponse:
     response_model=TrustResponse,
     summary="Check a wallet's public trust signals",
     responses={
+        401: {"description": "Invalid or missing API key."},
+        422: {"description": "Invalid request body."},
+        429: {"description": "Rate limit exceeded."},
+        500: {"description": "Trust calculation failed."},
         503: {
             "description": (
                 "The blockchain provider is temporarily unavailable."
             )
-        }
+        },
     },
 )
 def check_wallet(
     payload: CheckWalletRequest,
-    _api_key: str = Security(require_api_key),
+    _api_key: str = Depends(enforce_rate_limit),
 ):
     address = normalize_address(payload.wallet_address)
 
     try:
         return calculate_trust_result(address)
     except RuntimeError as exc:
-        raise HTTPException(
+        raise APIError(
             status_code=503,
-            detail=f"Blockchain provider unavailable: {str(exc)}",
+            code="BLOCKCHAIN_PROVIDER_ERROR",
+            message=(
+                "The blockchain provider is temporarily unavailable."
+            ),
         ) from exc
     except Exception as exc:
-        raise HTTPException(
+        raise APIError(
             status_code=500,
-            detail="Failed to calculate wallet trust.",
+            code="SCORING_FAILED",
+            message="Failed to calculate wallet trust.",
         ) from exc
 
 
@@ -123,11 +131,10 @@ def check_wallet(
     response_model=GeneratedProofResponse,
     summary="Generate a signed wallet trust proof",
     responses={
-        500: {
-            "description": (
-                "The proof service is unavailable or not configured."
-            )
-        },
+        401: {"description": "Invalid or missing API key."},
+        422: {"description": "Invalid request body."},
+        429: {"description": "Rate limit exceeded."},
+        500: {"description": "Proof generation failed."},
         503: {
             "description": (
                 "The blockchain provider is temporarily unavailable."
@@ -137,21 +144,25 @@ def check_wallet(
 )
 def generate_proof(
     payload: GenerateProofRequest,
-    _api_key: str = Security(require_api_key),
+    _api_key: str = Depends(enforce_rate_limit),
 ):
     address = normalize_address(payload.wallet_address)
 
     try:
         trust_result = calculate_trust_result(address)
     except RuntimeError as exc:
-        raise HTTPException(
+        raise APIError(
             status_code=503,
-            detail=f"Blockchain provider unavailable: {str(exc)}",
+            code="BLOCKCHAIN_PROVIDER_ERROR",
+            message=(
+                "The blockchain provider is temporarily unavailable."
+            ),
         ) from exc
     except Exception as exc:
-        raise HTTPException(
+        raise APIError(
             status_code=500,
-            detail="Failed to calculate wallet trust.",
+            code="SCORING_FAILED",
+            message="Failed to calculate wallet trust.",
         ) from exc
 
     try:
@@ -160,17 +171,22 @@ def generate_proof(
             valid_for_hours=payload.valid_for_hours,
         )
     except RuntimeError as exc:
-        raise HTTPException(
+        raise APIError(
             status_code=500,
-            detail="Proof service is not configured correctly.",
+            code="PROOF_SERVICE_ERROR",
+            message=(
+                "The proof service is not configured correctly."
+            ),
         ) from exc
     except ValueError as exc:
-        raise HTTPException(
+        raise APIError(
             status_code=400,
-            detail=str(exc),
+            code="INVALID_PROOF_VALIDITY",
+            message=str(exc),
         ) from exc
     except Exception as exc:
-        raise HTTPException(
+        raise APIError(
             status_code=500,
-            detail="Failed to generate proof.",
+            code="PROOF_GENERATION_FAILED",
+            message="Failed to generate proof.",
         ) from exc
