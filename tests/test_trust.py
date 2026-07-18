@@ -150,4 +150,8 @@ def test_check_wallet_returns_503_when_provider_fails(
     data = response.json()
 
     assert response.status_code == 503
-    assert "Blockchain provider unavailable" in data["detail"]
+    assert data["error"]["code"] == "BLOCKCHAIN_PROVIDER_ERROR"
+    assert data["error"]["message"] == (
+        "The blockchain provider is temporarily unavailable."
+    )
+    assert data["detail"] == data["error"]["message"]

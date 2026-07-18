@@ -232,8 +232,14 @@ def test_generate_proof_returns_503_for_provider_failure(
         },
     )
 
+    data = response.json()
+
     assert response.status_code == 503
-    assert "Blockchain provider unavailable" in response.json()["detail"]
+    assert data["error"]["code"] == "BLOCKCHAIN_PROVIDER_ERROR"
+    assert data["error"]["message"] == (
+        "The blockchain provider is temporarily unavailable."
+    )
+    assert data["detail"] == data["error"]["message"]
 
 
 def test_generate_proof_fails_without_signing_secret(
@@ -255,7 +261,11 @@ def test_generate_proof_fails_without_signing_secret(
         },
     )
 
+    data = response.json()
+
     assert response.status_code == 500
-    assert response.json()["detail"] == (
-        "Proof service is not configured correctly."
+    assert data["error"]["code"] == "PROOF_SERVICE_ERROR"
+    assert data["error"]["message"] == (
+        "The proof service is not configured correctly."
     )
+    assert data["detail"] == data["error"]["message"]
