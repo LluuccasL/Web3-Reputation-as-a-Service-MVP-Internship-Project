@@ -28,7 +28,7 @@ def test_client_adds_api_key_header():
     )
 
     assert client.session.headers["X-API-Key"] == "test-api-key"
-
+    assert client.session.trust_env is False
 
 def test_health_returns_api_response(monkeypatch):
     client = TrustAPIClient(

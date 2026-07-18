@@ -1,5 +1,5 @@
 from typing import Any
-
+from urllib.parse import urlparse
 import requests
 
 
@@ -25,8 +25,13 @@ class TrustAPIClient:
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-
         self.session = requests.Session()
+
+        hostname = urlparse(self.base_url).hostname
+
+        if hostname in {"127.0.0.1", "localhost", "::1"}:
+            self.session.trust_env = False
+
         self.session.headers.update(
             {
                 "Accept": "application/json",
