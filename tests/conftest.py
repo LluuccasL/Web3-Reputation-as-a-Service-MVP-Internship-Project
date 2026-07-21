@@ -63,3 +63,12 @@ def reset_rate_limit_state():
     yield
 
     rate_limiter.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_trust_cache():
+    from app.routers.trust import clear_trust_cache
+
+    clear_trust_cache()
+    yield
+    clear_trust_cache()

@@ -1,3 +1,7 @@
+import os
+import time
+from functools import lru_cache
+
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -21,6 +25,15 @@ from app.services.proof_service import create_signed_proof
 
 
 router = APIRouter(tags=["trust"])
+
+TRUST_CACHE_TTL_SECONDS = max(
+    1,
+    int(os.getenv("TRUST_CACHE_TTL_SECONDS", "300")),
+)
+TRUST_CACHE_MAX_SIZE = max(
+    1,
+    int(os.getenv("TRUST_CACHE_MAX_SIZE", "256")),
+)
 
 
 def reputation_to_trust_response(
@@ -75,15 +88,36 @@ def reputation_to_trust_response(
     )
 
 
-def calculate_trust_result(
+@lru_cache(maxsize=TRUST_CACHE_MAX_SIZE)
+def _calculate_trust_result_cached(
     address: str,
+    cache_window: int,
 ) -> TrustResponse:
+    del cache_window
+
     reputation = calculate_wallet_reputation(
         address,
         max_count=10,
     )
 
     return reputation_to_trust_response(reputation)
+
+
+def calculate_trust_result(
+    address: str,
+) -> TrustResponse:
+    cache_window = int(
+        time.monotonic() // TRUST_CACHE_TTL_SECONDS
+    )
+
+    return _calculate_trust_result_cached(
+        address,
+        cache_window,
+    )
+
+
+def clear_trust_cache() -> None:
+    _calculate_trust_result_cached.cache_clear()
 
 
 @router.post(
