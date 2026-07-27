@@ -224,3 +224,100 @@ def generate_proof(
             code="PROOF_GENERATION_FAILED",
             message="Failed to generate proof.",
         ) from exc
+
+
+from app.schemas_enhanced import EnhancedTrustResponse
+from app.services.advanced_features import (
+    calculate_advanced_features,
+)
+from app.services.bot_detection import (
+    evaluate_bot_heuristics,
+)
+from app.services.enhanced_scoring import (
+    calculate_enhanced_trust_result,
+)
+from app.services.enrichment import enrich_wallet
+from app.services.risk_flags import generate_risk_flags
+
+
+@router.post(
+    "/check_wallet/enhanced",
+    response_model=EnhancedTrustResponse,
+    summary="Check a wallet with enhanced behavioral analysis",
+    responses={
+        401: {"description": "Invalid or missing API key."},
+        422: {"description": "Invalid request body."},
+        429: {"description": "Rate limit exceeded."},
+        500: {"description": "Enhanced trust calculation failed."},
+        503: {
+            "description": (
+                "Required blockchain provider data is unavailable."
+            )
+        },
+    },
+)
+def check_wallet_enhanced(
+    payload: CheckWalletRequest,
+    _api_key: str = Depends(enforce_rate_limit),
+) -> EnhancedTrustResponse:
+    """
+    Return the original trust result together with Week 5 analysis.
+
+    The existing /check_wallet endpoint remains unchanged.
+    """
+    address = normalize_address(payload.wallet_address)
+
+    try:
+        base_result = calculate_trust_result(address)
+
+        enriched_data = enrich_wallet(address)
+
+        advanced_features = calculate_advanced_features(
+            enriched_data
+        )
+
+        heuristic_results = evaluate_bot_heuristics(
+            enriched_data,
+            advanced_features,
+        )
+
+        risk_flag_results = generate_risk_flags(
+            enriched_data,
+            advanced_features,
+            heuristic_results,
+        )
+
+        enhanced_result = calculate_enhanced_trust_result(
+            base_result,
+            enriched_data,
+            advanced_features,
+            risk_flag_results,
+        )
+
+        return EnhancedTrustResponse.model_validate(
+            {
+                **enhanced_result,
+                "wallet_address": address,
+                "source_status": enriched_data.get(
+                    "source_status",
+                    {},
+                ),
+                "data_errors": enriched_data.get(
+                    "errors",
+                    {},
+                ),
+            }
+        )
+
+    except RuntimeError as exc:
+        raise APIError(
+            503,
+            "BLOCKCHAIN_PROVIDER_ERROR",
+            str(exc),
+        ) from exc
+    except Exception as exc:
+        raise APIError(
+            500,
+            "ENHANCED_SCORING_FAILED",
+            "Enhanced wallet analysis failed.",
+        ) from exc

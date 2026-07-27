@@ -124,3 +124,15 @@ class TrustAPIClient:
                 "valid_for_hours": valid_for_hours,
             },
         )
+
+    def check_wallet_enhanced(
+        self,
+        wallet_address: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/check_wallet/enhanced",
+            json={
+                "wallet_address": wallet_address,
+            },
+        )

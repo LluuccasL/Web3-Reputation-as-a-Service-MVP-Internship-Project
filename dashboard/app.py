@@ -436,3 +436,402 @@ if "analytics_results" in st.session_state:
         with st.expander("Analytics errors"):
             for error in analytics_errors:
                 st.error(error)
+
+
+st.divider()
+st.header("Advanced Bot Detection")
+st.caption(
+    "Analyze transaction behavior, bot-risk signals, "
+    "data coverage, and explainable score adjustments."
+)
+
+selected_wallet = st.session_state.get(
+    "selected_wallet"
+)
+
+trust_result = st.session_state.get(
+    "trust_result"
+)
+
+if (
+    not selected_wallet
+    and isinstance(trust_result, dict)
+):
+    selected_wallet = trust_result.get(
+        "wallet_address"
+    )
+
+if not selected_wallet:
+    st.info(
+        "Use Wallet Lookup above before running "
+        "the enhanced behavioral analysis."
+    )
+else:
+    st.write(f"Selected wallet: `{selected_wallet}`")
+
+    if st.button(
+        "Run enhanced analysis",
+        type="primary",
+        key="run_enhanced_analysis",
+    ):
+        try:
+            with st.spinner(
+                "Analyzing blockchain behavior..."
+            ):
+                enhanced_result = (
+                    client.check_wallet_enhanced(
+                        selected_wallet
+                    )
+                )
+
+            st.session_state[
+                "enhanced_result"
+            ] = enhanced_result
+
+            st.session_state[
+                "enhanced_wallet"
+            ] = selected_wallet
+
+        except DashboardAPIError as exc:
+            st.error(str(exc))
+
+enhanced_result = st.session_state.get(
+    "enhanced_result"
+)
+
+enhanced_wallet = st.session_state.get(
+    "enhanced_wallet"
+)
+
+if (
+    isinstance(enhanced_result, dict)
+    and enhanced_wallet == selected_wallet
+):
+    st.subheader("Enhanced trust result")
+
+    score_column, tier_column, risk_column = (
+        st.columns(3)
+    )
+
+    with score_column:
+        st.metric(
+            "Enhanced score",
+            enhanced_result.get(
+                "enhanced_score",
+                0,
+            ),
+            delta=enhanced_result.get(
+                "score_adjustment",
+                0,
+            ),
+            help=(
+                "The delta shows the change from "
+                "the original trust score."
+            ),
+        )
+
+    with tier_column:
+        st.metric(
+            "Trust tier",
+            str(
+                enhanced_result.get(
+                    "trust_tier",
+                    "unknown",
+                )
+            ).title(),
+        )
+
+    with risk_column:
+        st.metric(
+            "Risk level",
+            str(
+                enhanced_result.get(
+                    "risk_level",
+                    "none",
+                )
+            ).title(),
+        )
+
+    base_column, likelihood_column, coverage_column = (
+        st.columns(3)
+    )
+
+    with base_column:
+        st.metric(
+            "Original score",
+            enhanced_result.get(
+                "base_score",
+                0,
+            ),
+        )
+
+    with likelihood_column:
+        st.metric(
+            "Human likelihood",
+            str(
+                enhanced_result.get(
+                    "human_likelihood",
+                    "unknown",
+                )
+            ).title(),
+        )
+
+    with coverage_column:
+        coverage = float(
+            enhanced_result.get(
+                "data_coverage",
+                0.0,
+            )
+        )
+
+        st.metric(
+            "Data coverage",
+            f"{coverage:.0%}",
+        )
+
+    risk_points_column, penalty_column, positive_column = (
+        st.columns(3)
+    )
+
+    with risk_points_column:
+        st.metric(
+            "Risk points",
+            enhanced_result.get(
+                "risk_points",
+                0,
+            ),
+        )
+
+    with penalty_column:
+        st.metric(
+            "Risk penalty",
+            enhanced_result.get(
+                "risk_penalty",
+                0,
+            ),
+        )
+
+    with positive_column:
+        st.metric(
+            "Positive points",
+            enhanced_result.get(
+                "positive_points",
+                0,
+            ),
+        )
+
+    st.subheader("Advanced behavioral features")
+
+    features = enhanced_result.get(
+        "advanced_features",
+        {},
+    )
+
+    feature_labels = {
+        "total_transfers": "Total transfers",
+        "unique_interaction_addresses": (
+            "Unique interaction addresses"
+        ),
+        "transaction_diversity": (
+            "Transaction diversity"
+        ),
+        "unique_contracts": "Unique contracts",
+        "contract_interaction_count": (
+            "Contract interactions"
+        ),
+        "contract_interaction_ratio": (
+            "Contract interaction ratio"
+        ),
+        "transaction_entropy": (
+            "Transaction entropy"
+        ),
+        "wallet_lifespan_days": (
+            "Wallet lifespan in days"
+        ),
+        "nft_transfer_count": (
+            "NFT transfer count"
+        ),
+        "has_nft_activity": (
+            "Has NFT activity"
+        ),
+    }
+
+    feature_rows = [
+        {
+            "Feature": feature_labels.get(
+                feature_name,
+                feature_name,
+            ),
+            "Value": feature_value,
+        }
+        for feature_name, feature_value
+        in features.items()
+    ]
+
+    st.dataframe(
+        feature_rows,
+        width="stretch",
+        hide_index=True,
+    )
+
+    st.subheader("Risk flags")
+
+    risk_flags = enhanced_result.get(
+        "risk_flags",
+        [],
+    )
+
+    if risk_flags:
+        for flag in risk_flags:
+            flag_name = str(
+                flag.get(
+                    "flag_id",
+                    "unknown_flag",
+                )
+            ).replace("_", " ").title()
+
+            severity = str(
+                flag.get(
+                    "severity",
+                    "unknown",
+                )
+            ).upper()
+
+            with st.expander(
+                f"{severity} — {flag_name}",
+                expanded=True,
+            ):
+                st.write(
+                    flag.get(
+                        "evidence",
+                        "No evidence provided.",
+                    )
+                )
+
+                metrics = flag.get(
+                    "metrics",
+                    {},
+                )
+
+                if metrics:
+                    st.json(metrics)
+    else:
+        st.success(
+            "No behavioral risk flags were detected."
+        )
+
+    informational_flags = enhanced_result.get(
+        "informational_flags",
+        [],
+    )
+
+    if informational_flags:
+        st.subheader("Informational signals")
+
+        for flag in informational_flags:
+            flag_name = str(
+                flag.get(
+                    "flag_id",
+                    "information",
+                )
+            ).replace("_", " ").title()
+
+            with st.expander(flag_name):
+                st.write(
+                    flag.get(
+                        "evidence",
+                        "No evidence provided.",
+                    )
+                )
+
+                metrics = flag.get(
+                    "metrics",
+                    {},
+                )
+
+                if metrics:
+                    st.json(metrics)
+
+    st.subheader("Score explanation")
+
+    score_factors = enhanced_result.get(
+        "score_factors",
+        [],
+    )
+
+    if score_factors:
+        factor_rows = [
+            {
+                "Factor": str(
+                    factor.get(
+                        "factor_id",
+                        "unknown",
+                    )
+                ).replace("_", " ").title(),
+                "Direction": str(
+                    factor.get(
+                        "direction",
+                        "unknown",
+                    )
+                ).title(),
+                "Points": factor.get(
+                    "points",
+                    0,
+                ),
+                "Evidence": factor.get(
+                    "evidence",
+                    "",
+                ),
+            }
+            for factor in score_factors
+        ]
+
+        st.dataframe(
+            factor_rows,
+            width="stretch",
+            hide_index=True,
+        )
+    else:
+        st.info(
+            "No Week 5 score adjustments were applied."
+        )
+
+    st.subheader("Data-source availability")
+
+    source_status = enhanced_result.get(
+        "source_status",
+        {},
+    )
+
+    source_rows = [
+        {
+            "Source": source.replace(
+                "_",
+                " ",
+            ).title(),
+            "Status": str(status).title(),
+        }
+        for source, status in source_status.items()
+    ]
+
+    if source_rows:
+        st.dataframe(
+            source_rows,
+            width="stretch",
+            hide_index=True,
+        )
+
+    data_errors = enhanced_result.get(
+        "data_errors",
+        {},
+    )
+
+    if data_errors:
+        with st.expander(
+            "Unavailable or partial data sources"
+        ):
+            for source, message in data_errors.items():
+                st.warning(
+                    f"{source.replace('_', ' ').title()}: "
+                    f"{message}"
+                )
