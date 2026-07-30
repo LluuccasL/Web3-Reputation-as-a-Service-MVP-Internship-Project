@@ -136,3 +136,9 @@ class TrustAPIClient:
                 "wallet_address": wallet_address,
             },
         )
+
+    def get_demo_wallets(self) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/demo_wallets",
+        )

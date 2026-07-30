@@ -147,3 +147,40 @@ def enrich_wallet(
         "source_status": source_status,
         "errors": errors,
     }
+
+
+import os as _os
+
+from app.demo_wallets import (
+    get_demo_enriched_data as _get_demo_enriched_data,
+)
+
+
+_live_enrich_wallet = enrich_wallet
+
+
+def _demo_mode_enabled() -> bool:
+    return _os.getenv(
+        "DEMO_MODE",
+        "false",
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def enrich_wallet(address: str) -> dict:
+    """
+    Use deterministic fixtures for recognized demo wallets.
+
+    Live wallets continue through the original enrichment service.
+    """
+    if _demo_mode_enabled():
+        demo_data = _get_demo_enriched_data(address)
+
+        if demo_data is not None:
+            return demo_data
+
+    return _live_enrich_wallet(address)

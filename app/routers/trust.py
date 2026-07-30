@@ -321,3 +321,37 @@ def check_wallet_enhanced(
             "ENHANCED_SCORING_FAILED",
             "Enhanced wallet analysis failed.",
         ) from exc
+
+
+from app.demo_wallets import list_demo_wallets
+from app.schemas_demo import DemoWalletCatalogResponse
+from app.services.enrichment import _demo_mode_enabled
+
+
+@router.get(
+    "/demo_wallets",
+    response_model=DemoWalletCatalogResponse,
+    summary="List available synthetic demo wallets",
+    responses={
+        401: {"description": "Invalid or missing API key."},
+        429: {"description": "Rate limit exceeded."},
+    },
+)
+def get_demo_wallet_catalog(
+    _api_key: str = Depends(enforce_rate_limit),
+) -> DemoWalletCatalogResponse:
+    """
+    Return synthetic scenarios when local demo mode is enabled.
+
+    No live blockchain provider request is made by this endpoint.
+    """
+    demo_mode_enabled = _demo_mode_enabled()
+
+    return DemoWalletCatalogResponse(
+        demo_mode_enabled=demo_mode_enabled,
+        wallets=(
+            list_demo_wallets()
+            if demo_mode_enabled
+            else []
+        ),
+    )

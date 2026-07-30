@@ -793,7 +793,7 @@ if (
         )
     else:
         st.info(
-            "No Week 5 score adjustments were applied."
+            "No score adjustments were applied."
         )
 
     st.subheader("Data-source availability")
@@ -835,3 +835,124 @@ if (
                     f"{source.replace('_', ' ').title()}: "
                     f"{message}"
                 )
+
+
+try:
+    demo_catalog = client.get_demo_wallets()
+except DashboardAPIError as exc:
+    demo_catalog = {
+        "demo_mode_enabled": False,
+        "wallets": [],
+    }
+
+    st.sidebar.warning(
+        f"Demo scenarios are unavailable: {exc}"
+    )
+
+
+if demo_catalog.get("demo_mode_enabled"):
+    demo_wallets = demo_catalog.get(
+        "wallets",
+        [],
+    )
+
+    if demo_wallets:
+        st.sidebar.divider()
+        st.sidebar.subheader("Demo Wallet Scenarios")
+
+        st.sidebar.warning(
+            "These wallets use synthetic demonstration data."
+        )
+
+        demo_wallet_by_key = {
+            wallet["scenario_key"]: wallet
+            for wallet in demo_wallets
+        }
+
+        demo_scenario_keys = list(
+            demo_wallet_by_key
+        )
+
+        selected_demo_key = st.sidebar.selectbox(
+            "Choose a scenario",
+            options=demo_scenario_keys,
+            format_func=lambda scenario_key: (
+                demo_wallet_by_key[
+                    scenario_key
+                ]["label"]
+            ),
+            key="selected_demo_scenario",
+        )
+
+        selected_demo = demo_wallet_by_key[
+            selected_demo_key
+        ]
+
+        st.sidebar.caption(
+            selected_demo["description"]
+        )
+
+        st.sidebar.code(
+            selected_demo["address"],
+            language=None,
+        )
+
+        with st.sidebar.expander(
+            "Expected demonstration"
+        ):
+            st.write(
+                selected_demo[
+                    "expected_outcome"
+                ]
+            )
+
+            if selected_demo.get("group_id"):
+                st.write(
+                    "Related group: "
+                    f"`{selected_demo['group_id']}`"
+                )
+
+        if st.sidebar.button(
+            "Use this demo wallet",
+            type="primary",
+            key="use_demo_wallet",
+        ):
+            st.session_state[
+                "selected_wallet"
+            ] = selected_demo["address"]
+
+            st.session_state[
+                "selected_demo_wallet"
+            ] = selected_demo
+
+            st.session_state.pop(
+                "enhanced_result",
+                None,
+            )
+
+            st.session_state.pop(
+                "enhanced_wallet",
+                None,
+            )
+
+            st.rerun()
+
+        active_demo = st.session_state.get(
+            "selected_demo_wallet"
+        )
+
+        if (
+            isinstance(active_demo, dict)
+            and st.session_state.get(
+                "selected_wallet"
+            ) == active_demo.get("address")
+        ):
+            st.sidebar.success(
+                "Selected: "
+                f"{active_demo['label']}"
+            )
+else:
+    st.sidebar.info(
+        "Set DEMO_MODE=true and restart Uvicorn "
+        "to enable synthetic wallet scenarios."
+    )

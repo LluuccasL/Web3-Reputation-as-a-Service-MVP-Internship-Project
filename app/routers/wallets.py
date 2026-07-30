@@ -1,7 +1,10 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.demo_wallets import get_demo_enriched_data
 from app.models import Wallet
 from app.schemas import (
     WalletBalanceResponse,
@@ -60,30 +63,72 @@ def get_wallet_or_404(wallet_address: str, db: Session) -> Wallet:
     return wallet
 
 
+def _demo_mode_enabled() -> bool:
+    return os.getenv(
+        "DEMO_MODE",
+        "false",
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def calculate_wallet_reputation(
     address: str,
     max_count: int = 10,
 ) -> WalletReputationResponse:
     """
-    Calculate the Week 2 wallet reputation result.
-
-    This function is shared by the original reputation endpoint and the
-    Week 3 public trust endpoint so the score is calculated in one place.
+    Calculate reputation using either synthetic demo fixtures or
+    the existing live blockchain provider.
     """
-    balance = get_wallet_balance(address)
+    demo_data = None
 
-    transfers = []
-    transfer_status = "available"
-    transfer_error = None
+    if _demo_mode_enabled():
+        demo_data = get_demo_enriched_data(address)
 
-    try:
-        transfers = get_asset_transfers_for_wallet(
-            address,
-            max_count=max_count,
+    if demo_data is not None:
+        balance = {
+            "balance_eth": demo_data["balance"],
+            "network": "synthetic-demo",
+        }
+
+        transfer_status = demo_data.get(
+            "source_status",
+            {},
+        ).get(
+            "transfers",
+            "available",
         )
-    except Exception as exc:
-        transfer_status = "unavailable"
-        transfer_error = str(exc)
+
+        transfer_error = demo_data.get(
+            "errors",
+            {},
+        ).get("transfers")
+
+        if transfer_status == "unavailable":
+            transfers = []
+        else:
+            transfers = demo_data.get(
+                "transfers",
+                [],
+            )[:max_count]
+    else:
+        balance = get_wallet_balance(address)
+
+        transfers = []
+        transfer_status = "available"
+        transfer_error = None
+
+        try:
+            transfers = get_asset_transfers_for_wallet(
+                address,
+                max_count=max_count,
+            )
+        except Exception as exc:
+            transfer_status = "unavailable"
+            transfer_error = str(exc)
 
     balance_eth = float(balance["balance_eth"])
     transfer_count = len(transfers)
@@ -96,7 +141,7 @@ def calculate_wallet_reputation(
     if balance_eth >= 0.01:
         score += 15
 
-    if transfer_status == "available":
+    if transfer_status in {"available", "partial"}:
         if transfer_count >= 1:
             score += 25
 
@@ -106,7 +151,6 @@ def calculate_wallet_reputation(
         if transfer_count >= 10:
             score += 15
     else:
-        # Give a smaller partial-data score instead of failing completely.
         score += 10
 
     score = min(score, 100)
@@ -118,6 +162,18 @@ def calculate_wallet_reputation(
     else:
         level = "low"
 
+    if transfer_status == "unavailable":
+        note = (
+            "Partial score used because transfer data "
+            "was unavailable."
+        )
+    elif transfer_status == "partial":
+        note = "Score uses partial transfer data."
+    elif demo_data is not None:
+        note = "Synthetic demo score used."
+    else:
+        note = "Full score used."
+
     return WalletReputationResponse(
         address=address,
         score=score,
@@ -128,11 +184,7 @@ def calculate_wallet_reputation(
             "transfer_status": transfer_status,
             "transfer_error": transfer_error,
             "network": balance["network"],
-            "note": (
-                "Partial score used because transfer data was unavailable."
-                if transfer_status == "unavailable"
-                else "Full score used."
-            ),
+            "note": note,
         },
     )
 
