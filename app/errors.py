@@ -1,5 +1,7 @@
 from fastapi import Request
-from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exception_handlers import (
+    request_validation_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -7,11 +9,12 @@ from fastapi.responses import JSONResponse
 WEEK3_API_PATHS = {
     "/check_wallet",
     "/generate_proof",
+    "/sybil/analyze",
 }
 
 
 class APIError(Exception):
-    """Controlled error returned by the external Week 3 API."""
+    """Controlled error returned by the external API."""
 
     def __init__(
         self,
@@ -41,10 +44,9 @@ async def api_error_handler(
     exc: APIError,
 ) -> JSONResponse:
     """
-    Return a consistent Week 3 error response.
+    Return a consistent structured API error response.
 
-    The detail field is retained temporarily so earlier tests and clients
-    remain compatible. New clients should use the error object.
+    The detail field remains for compatibility with earlier clients.
     """
     return JSONResponse(
         status_code=exc.status_code,
@@ -65,8 +67,8 @@ async def validation_error_handler(
     exc: RequestValidationError,
 ):
     """
-    Use structured validation errors for Week 3 endpoints while preserving
-    FastAPI's normal validation format for older routes.
+    Use structured errors for protected analysis endpoints while
+    preserving FastAPI's original format for older wallet routes.
     """
     if request.url.path not in WEEK3_API_PATHS:
         return await request_validation_exception_handler(
@@ -74,18 +76,18 @@ async def validation_error_handler(
             exc,
         )
 
+    message = (
+        "The request body contains invalid or missing fields."
+    )
+
     return JSONResponse(
         status_code=422,
         content={
             "error": {
                 "code": "INVALID_REQUEST",
-                "message": (
-                    "The request body contains invalid or missing fields."
-                ),
+                "message": message,
                 "request_id": get_request_id(request),
             },
-            "detail": (
-                "The request body contains invalid or missing fields."
-            ),
+            "detail": message,
         },
     )

@@ -13,7 +13,7 @@ from app.errors import (
 from app.middleware.request_logging import (
     request_logging_middleware,
 )
-from app.routers import chain, trust, wallets
+from app.routers import chain, sybil, trust, wallets
 
 
 log_level_name = os.getenv(
@@ -36,7 +36,9 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Web3 Trust API",
-    description="Proof-of-Human Trust API for wallet reputation scoring",
+    description=(
+        "Proof-of-Human Trust API for wallet reputation scoring"
+    ),
     version="0.4.0",
 )
 
@@ -68,3 +70,4 @@ def health_check():
 app.include_router(chain.router)
 app.include_router(wallets.router)
 app.include_router(trust.router)
+app.include_router(sybil.router)

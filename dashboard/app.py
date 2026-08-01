@@ -3,7 +3,14 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from dashboard.api_client import DashboardAPIError, TrustAPIClient
+from dashboard.api_client import DashboardAPIError
+from dashboard.sybil_client import SybilAPIClient
+from dashboard.sybil_integration import (
+    flagged_wallet_rows,
+    merge_trust_and_sybil_results,
+    stored_wallet_addresses,
+    sybil_context_for_wallet,
+)
 
 
 load_dotenv()
@@ -20,7 +27,7 @@ st.set_page_config(
     layout="wide",
 )
 
-client = TrustAPIClient(
+client = SybilAPIClient(
     base_url=API_BASE_URL,
     api_key=API_KEY,
 )
@@ -224,6 +231,64 @@ if "trust_result" in st.session_state:
     else:
         st.success("No risk flags were returned.")
 
+    sybil_context = sybil_context_for_wallet(
+        st.session_state.get(
+            "analytics_sybil_result"
+        ),
+        trust_result.get("wallet_address"),
+    )
+
+    if sybil_context:
+        st.markdown("#### Stored-Wallet Sybil Context")
+
+        sybil_score_column, sybil_level_column, cluster_column = (
+            st.columns(3)
+        )
+
+        with sybil_score_column:
+            st.metric(
+                "Sybil Risk Score",
+                f"{sybil_context.get('sybil_risk_score', 0)}/100",
+            )
+
+        with sybil_level_column:
+            st.metric(
+                "Sybil Risk Level",
+                str(
+                    sybil_context.get(
+                        "sybil_risk_level",
+                        "low",
+                    )
+                ).title(),
+            )
+
+        with cluster_column:
+            st.metric(
+                "Related Stored Wallets",
+                len(
+                    sybil_context.get(
+                        "related_wallets",
+                        [],
+                    )
+                ),
+            )
+
+        cluster_id = sybil_context.get(
+            "cluster_id"
+        )
+
+        if cluster_id:
+            st.warning(
+                "This wallet belongs to detected cluster "
+                f"`{cluster_id}` within the most recent "
+                "stored-wallet analysis."
+            )
+        else:
+            st.success(
+                "This wallet was not clustered with another "
+                "stored wallet."
+            )
+
     with st.expander("View complete trust response"):
         st.json(trust_result)
 
@@ -275,6 +340,8 @@ else:
     if st.button("Analyze Stored Wallets"):
         analytics_results = []
         analytics_errors = []
+        analytics_sybil_result = None
+        analytics_sybil_error = None
 
         progress_bar = st.progress(0)
         progress_text = st.empty()
@@ -329,8 +396,56 @@ else:
         progress_text.empty()
         progress_bar.empty()
 
+        try:
+            analyzed_addresses = (
+                stored_wallet_addresses(
+                    analytics_results
+                )
+            )
+
+            if len(analyzed_addresses) >= 2:
+                with st.spinner(
+                    "Comparing stored wallets for Sybil behavior..."
+                ):
+                    analytics_sybil_result = (
+                        client.analyze_sybil_wallets(
+                            analyzed_addresses
+                        )
+                    )
+            elif analyzed_addresses:
+                analytics_sybil_error = (
+                    "At least two successfully analyzed stored "
+                    "wallets are required for Sybil comparison."
+                )
+
+        except (
+            DashboardAPIError,
+            ValueError,
+        ) as exc:
+            analytics_sybil_error = (
+                exc.message
+                if isinstance(
+                    exc,
+                    DashboardAPIError,
+                )
+                else str(exc)
+            )
+
+        analytics_results = (
+            merge_trust_and_sybil_results(
+                analytics_results,
+                analytics_sybil_result,
+            )
+        )
+
         st.session_state["analytics_results"] = analytics_results
         st.session_state["analytics_errors"] = analytics_errors
+        st.session_state[
+            "analytics_sybil_result"
+        ] = analytics_sybil_result
+        st.session_state[
+            "analytics_sybil_error"
+        ] = analytics_sybil_error
 
 
 if "analytics_results" in st.session_state:
@@ -350,43 +465,37 @@ if "analytics_results" in st.session_state:
         st.markdown("#### Trust-Tier Distribution")
         st.bar_chart(tier_counts)
 
-        flagged_wallets = []
-
-        for result in analytics_results:
-            risk_flags = result.get("risk_flags", [])
-            trust_tier = str(
-                result.get("trust_tier", "")
-            ).lower()
-            human_likelihood = str(
-                result.get("human_likelihood", "")
-            ).lower()
-
-            is_flagged = (
-                bool(risk_flags)
-                or trust_tier in {"bronze", "low", "untrusted"}
-                or human_likelihood == "low"
+        flagged_wallets = flagged_wallet_rows(
+            analytics_results
+        )
+        analytics_sybil_result = (
+            st.session_state.get(
+                "analytics_sybil_result"
             )
+        )
+        cluster_count = (
+            analytics_sybil_result.get(
+                "cluster_count",
+                0,
+            )
+            if isinstance(
+                analytics_sybil_result,
+                dict,
+            )
+            else 0
+        )
+        sybil_flagged_count = sum(
+            1
+            for result in analytics_results
+            if result.get("sybil_cluster_id")
+        )
 
-            if is_flagged:
-                flagged_wallets.append(
-                    {
-                        "wallet_address": result["wallet_address"],
-                        "trust_tier": result["trust_tier"],
-                        "human_likelihood": result[
-                            "human_likelihood"
-                        ],
-                        "confidence_score": result[
-                            "confidence_score"
-                        ],
-                        "risk_flags": ", ".join(
-                            str(flag).replace("_", " ").title()
-                            for flag in risk_flags
-                        )
-                        or "Low trust result",
-                    }
-                )
-
-        analyzed_column, flagged_column = st.columns(2)
+        (
+            analyzed_column,
+            flagged_column,
+            sybil_wallet_column,
+            cluster_column,
+        ) = st.columns(4)
 
         with analyzed_column:
             st.metric(
@@ -398,6 +507,18 @@ if "analytics_results" in st.session_state:
             st.metric(
                 "Flagged Wallets",
                 len(flagged_wallets),
+            )
+
+        with sybil_wallet_column:
+            st.metric(
+                "Sybil-Clustered Wallets",
+                sybil_flagged_count,
+            )
+
+        with cluster_column:
+            st.metric(
+                "Sybil Clusters",
+                cluster_count,
             )
 
         st.markdown("#### Flagged or Low-Trust Wallets")
@@ -431,6 +552,16 @@ if "analytics_results" in st.session_state:
             st.success(
                 "No flagged or low-trust wallets were found."
             )
+
+    analytics_sybil_error = st.session_state.get(
+        "analytics_sybil_error"
+    )
+
+    if analytics_sybil_error:
+        st.info(
+            "Stored-wallet Sybil comparison was not available: "
+            f"{analytics_sybil_error}"
+        )
 
     if analytics_errors:
         with st.expander("Analytics errors"):
