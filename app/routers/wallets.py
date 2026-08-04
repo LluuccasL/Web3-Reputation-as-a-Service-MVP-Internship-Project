@@ -19,6 +19,7 @@ from app.services.blockchain import (
     get_latest_block_number,
     get_wallet_balance,
 )
+from app.services.job_queue import JobQueue, get_job_queue
 
 router = APIRouter(
     prefix="/wallets",
@@ -189,10 +190,25 @@ def calculate_wallet_reputation(
     )
 
 
+
+def queue_wallet_rescore(
+    queue: JobQueue,
+    address: str,
+) -> tuple[str, bool]:
+    from app.routers.jobs import submit_scoring_job
+
+    return submit_scoring_job(
+        queue,
+        address,
+        refresh=True,
+    )
+
+
 @router.post("/ingest", response_model=WalletIngestResponse)
 def ingest_wallet(
     payload: WalletIngestRequest,
     db: Session = Depends(get_db),
+    queue: JobQueue = Depends(get_job_queue),
 ):
     address = normalize_address(payload.address)
 
@@ -220,9 +236,16 @@ def ingest_wallet(
     )
 
     if existing_wallet:
+        previous_block = existing_wallet.last_seen_block
         existing_wallet.last_seen_block = latest_block
         db.commit()
         db.refresh(existing_wallet)
+
+        if previous_block != latest_block:
+            queue_wallet_rescore(
+                queue,
+                existing_wallet.wallet_address,
+            )
 
         return WalletIngestResponse(
             status="already_exists",
@@ -239,6 +262,11 @@ def ingest_wallet(
     db.add(new_wallet)
     db.commit()
     db.refresh(new_wallet)
+
+    queue_wallet_rescore(
+        queue,
+        new_wallet.wallet_address,
+    )
 
     return WalletIngestResponse(
         status="ingested",

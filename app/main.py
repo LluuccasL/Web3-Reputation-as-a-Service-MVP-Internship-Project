@@ -13,7 +13,8 @@ from app.errors import (
 from app.middleware.request_logging import (
     request_logging_middleware,
 )
-from app.routers import chain, sybil, trust, wallets
+from app.middleware.observability import ObservabilityMiddleware
+from app.routers import chain, jobs, performance, sybil, trust, wallets
 
 
 log_level_name = os.getenv(
@@ -67,7 +68,11 @@ def health_check():
     return {"status": "healthy"}
 
 
+app.add_middleware(ObservabilityMiddleware)
+
 app.include_router(chain.router)
 app.include_router(wallets.router)
 app.include_router(trust.router)
 app.include_router(sybil.router)
+app.include_router(performance.router)
+app.include_router(jobs.router)

@@ -137,8 +137,102 @@ class TrustAPIClient:
             },
         )
 
+
+    def submit_score_job(
+        self,
+        wallet_address: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/jobs/score-wallet",
+            json={"wallet_address": wallet_address},
+        )
+
+    def refresh_wallet_score(
+        self,
+        wallet_address: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/wallets/{wallet_address}/refresh-score",
+        )
+
+    def get_job(
+        self,
+        job_id: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/jobs/{job_id}",
+        )
+
+    def get_latest_score(
+        self,
+        wallet_address: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/wallets/{wallet_address}/latest-score",
+        )
+
     def get_demo_wallets(self) -> dict[str, Any]:
         return self._request(
             "GET",
             "/demo_wallets",
+        )
+
+
+    def get_monitoring_metrics(self) -> dict:
+        data = self._request(
+            "GET",
+            "/performance/metrics",
+        )
+
+        if not isinstance(data, dict):
+            raise DashboardAPIError(
+                "The monitoring endpoint returned "
+                "an unexpected response."
+            )
+
+        return data
+
+
+    def list_jobs(
+        self,
+        limit: int = 20,
+        status: str | None = None,
+    ) -> dict:
+        params = {"limit": limit}
+
+        if status:
+            params["status"] = status
+
+        data = self._request(
+            "GET",
+            "/jobs",
+            params=params,
+        )
+
+        if (
+            not isinstance(data, dict)
+            or not isinstance(data.get("jobs"), list)
+        ):
+            raise DashboardAPIError(
+                "The jobs endpoint returned "
+                "an unexpected response."
+            )
+
+        return data
+
+
+    def submit_score_wallet_job(
+        self,
+        wallet_address: str,
+    ) -> dict:
+        return self._request(
+            "POST",
+            "/jobs/score-wallet",
+            json={
+                "wallet_address": wallet_address,
+            },
         )

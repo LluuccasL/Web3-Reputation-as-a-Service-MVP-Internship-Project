@@ -1,0 +1,138 @@
+{
+  "benchmark": "week7_baseline",
+  "created_at": "2026-08-04T08:38:17.886201+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "repeated_runs_per_endpoint": 10,
+  "endpoints": [
+    {
+      "name": "wallet_reputation",
+      "method": "GET",
+      "path": "/wallets/0xd000000000000000000000000000000000000001/reputation?max_count=10",
+      "first_request_ms": 7.794,
+      "repeated_request_ms": [
+        4.518,
+        4.121,
+        3.462,
+        3.657,
+        4.024,
+        3.58,
+        3.424,
+        5.021,
+        3.956,
+        3.395
+      ],
+      "repeated_summary_ms": {
+        "min": 3.395,
+        "average": 3.916,
+        "p50": 3.806,
+        "p95": 4.795,
+        "max": 5.021
+      },
+      "improvement_percent": 49.76
+    },
+    {
+      "name": "check_wallet",
+      "method": "POST",
+      "path": "/check_wallet",
+      "first_request_ms": 5.547,
+      "repeated_request_ms": [
+        6.074,
+        5.728,
+        4.664,
+        4.399,
+        4.325,
+        5.607,
+        5.266,
+        4.474,
+        4.423,
+        4.835
+      ],
+      "repeated_summary_ms": {
+        "min": 4.325,
+        "average": 4.979,
+        "p50": 4.749,
+        "p95": 5.918,
+        "max": 6.074
+      },
+      "improvement_percent": 10.24
+    },
+    {
+      "name": "generate_proof",
+      "method": "POST",
+      "path": "/generate_proof",
+      "first_request_ms": 6.609,
+      "repeated_request_ms": [
+        5.745,
+        5.847,
+        5.568,
+        4.169,
+        4.622,
+        5.947,
+        4.192,
+        5.043,
+        5.407,
+        4.588
+      ],
+      "repeated_summary_ms": {
+        "min": 4.169,
+        "average": 5.113,
+        "p50": 5.225,
+        "p95": 5.902,
+        "max": 5.947
+      },
+      "improvement_percent": 22.64
+    },
+    {
+      "name": "enhanced_trust",
+      "method": "POST",
+      "path": "/check_wallet/enhanced",
+      "first_request_ms": 6.47,
+      "repeated_request_ms": [
+        5.975,
+        4.886,
+        4.226,
+        6.135,
+        4.931,
+        4.383,
+        6.251,
+        5.964,
+        6.442,
+        4.787
+      ],
+      "repeated_summary_ms": {
+        "min": 4.226,
+        "average": 5.398,
+        "p50": 5.447,
+        "p95": 6.356,
+        "max": 6.442
+      },
+      "improvement_percent": 16.57
+    },
+    {
+      "name": "sybil_analysis",
+      "method": "POST",
+      "path": "/sybil/analyze",
+      "first_request_ms": 13.335,
+      "repeated_request_ms": [
+        6.143,
+        5.45,
+        5.348,
+        7.077,
+        6.605,
+        8.069,
+        6.014,
+        5.851,
+        6.295,
+        5.253
+      ],
+      "repeated_summary_ms": {
+        "min": 5.253,
+        "average": 6.211,
+        "p50": 6.079,
+        "p95": 7.623,
+        "max": 8.069
+      },
+      "improvement_percent": 53.42
+    }
+  ]
+}

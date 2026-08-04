@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
+from app.services.job_queue import get_job_queue
 
 
 TEST_DATABASE_URL = "sqlite://"
@@ -22,6 +23,19 @@ TestingSessionLocal = sessionmaker(
     autoflush=False,
     bind=test_engine,
 )
+
+
+class NoopJobQueue:
+    def submit_unique(
+        self,
+        wallet_address,
+        job_type,
+        task,
+    ):
+        return "test-background-job", True
+
+
+noop_job_queue = NoopJobQueue()
 
 
 @pytest.fixture()
@@ -42,6 +56,7 @@ def client(monkeypatch):
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_job_queue] = lambda: noop_job_queue
 
     with TestClient(app) as test_client:
         test_client.headers.update(

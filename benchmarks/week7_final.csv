@@ -1,0 +1,6 @@
+name,method,path,first_ms,repeat_min_ms,repeat_average_ms,repeat_p50_ms,repeat_p95_ms,repeat_max_ms,improvement_percent
+wallet_reputation,GET,/wallets/0xd000000000000000000000000000000000000001/reputation?max_count=10,7.794,3.395,3.916,3.806,4.795,5.021,49.76
+check_wallet,POST,/check_wallet,5.547,4.325,4.979,4.749,5.918,6.074,10.24
+generate_proof,POST,/generate_proof,6.609,4.169,5.113,5.225,5.902,5.947,22.64
+enhanced_trust,POST,/check_wallet/enhanced,6.47,4.226,5.398,5.447,6.356,6.442,16.57
+sybil_analysis,POST,/sybil/analyze,13.335,5.253,6.211,6.079,7.623,8.069,53.42

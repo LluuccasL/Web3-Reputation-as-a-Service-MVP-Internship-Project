@@ -1,10 +1,9 @@
 import os
 import time
-from functools import lru_cache
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from app.errors import APIError
 from app.middleware.rate_limit import enforce_rate_limit
@@ -21,27 +20,20 @@ from app.schemas import (
     TrustTier,
     WalletReputationResponse,
 )
+from app.services.monitoring import log_event
 from app.services.proof_service import create_signed_proof
+from app.services.resilience import (
+    RETRYABLE_EXCEPTIONS,
+    retry_operation,
+)
+from app.services.trust_cache import TTLCache
 
 
 router = APIRouter(tags=["trust"])
 
-TRUST_CACHE_TTL_SECONDS = max(
-    1,
-    int(os.getenv("TRUST_CACHE_TTL_SECONDS", "300")),
-)
-TRUST_CACHE_MAX_SIZE = max(
-    1,
-    int(os.getenv("TRUST_CACHE_MAX_SIZE", "256")),
-)
-
-
 def reputation_to_trust_response(
     reputation: WalletReputationResponse,
 ) -> TrustResponse:
-    """
-    Convert the internal Week 2 result into the public Week 3 response.
-    """
     score = max(0, min(reputation.score, 100))
 
     if score >= 80:
@@ -71,12 +63,16 @@ def reputation_to_trust_response(
         risk_flags.append("zero_balance")
 
     if transfer_status == "unavailable":
-        risk_flags.append("transfer_data_unavailable")
+        risk_flags.append(
+            "transfer_data_unavailable"
+        )
     elif transfer_count == 0:
         risk_flags.append("no_recent_transfers")
 
     if score < 50:
-        risk_flags.append("low_reputation_score")
+        risk_flags.append(
+            "low_reputation_score"
+        )
 
     return TrustResponse(
         wallet_address=reputation.address,
@@ -88,36 +84,132 @@ def reputation_to_trust_response(
     )
 
 
-@lru_cache(maxsize=TRUST_CACHE_MAX_SIZE)
-def _calculate_trust_result_cached(
-    address: str,
-    cache_window: int,
-) -> TrustResponse:
-    del cache_window
+TRUST_CACHE_TTL_SECONDS = max(
+    1,
+    int(os.getenv("TRUST_CACHE_TTL_SECONDS", "300")),
+)
+TRUST_CACHE_MAX_SIZE = max(
+    1,
+    int(os.getenv("TRUST_CACHE_MAX_SIZE", "256")),
+)
 
-    reputation = calculate_wallet_reputation(
-        address,
-        max_count=10,
+ALCHEMY_MAX_ATTEMPTS = max(
+    1,
+    int(os.getenv("ALCHEMY_MAX_ATTEMPTS", "3")),
+)
+ALCHEMY_RETRY_BASE_SECONDS = max(
+    0.0,
+    float(
+        os.getenv(
+            "ALCHEMY_RETRY_BASE_SECONDS",
+            "0.2",
+        )
+    ),
+)
+ALCHEMY_RETRY_MAX_SECONDS = max(
+    ALCHEMY_RETRY_BASE_SECONDS,
+    float(
+        os.getenv(
+            "ALCHEMY_RETRY_MAX_SECONDS",
+            "2.0",
+        )
+    ),
+)
+
+trust_cache: TTLCache[TrustResponse] = TTLCache(
+    ttl_seconds=TRUST_CACHE_TTL_SECONDS,
+    max_size=TRUST_CACHE_MAX_SIZE,
+)
+
+
+def _calculate_trust_result_uncached(
+    address: str,
+) -> TrustResponse:
+    reputation = retry_operation(
+        lambda: calculate_wallet_reputation(
+            address,
+            max_count=10,
+        ),
+        operation_name=(
+            "calculate_wallet_reputation"
+        ),
+        attempts=ALCHEMY_MAX_ATTEMPTS,
+        base_delay_seconds=(
+            ALCHEMY_RETRY_BASE_SECONDS
+        ),
+        max_delay_seconds=(
+            ALCHEMY_RETRY_MAX_SECONDS
+        ),
     )
 
     return reputation_to_trust_response(reputation)
 
 
+def calculate_trust_result_with_metadata(
+    address: str,
+) -> tuple[TrustResponse, str]:
+    try:
+        result, cache_hit = (
+            trust_cache.get_or_compute(
+                address,
+                lambda: (
+                    _calculate_trust_result_uncached(
+                        address
+                    )
+                ),
+            )
+        )
+    except RETRYABLE_EXCEPTIONS as exc:
+        stale_result = trust_cache.get_stale(
+            address
+        )
+
+        if stale_result is None:
+            raise
+
+        log_event(
+            "stale_score_served",
+            error_type=type(exc).__name__,
+        )
+
+        return stale_result, "STALE"
+
+    return (
+        result,
+        "HIT" if cache_hit else "MISS",
+    )
+
+
 def calculate_trust_result(
     address: str,
 ) -> TrustResponse:
-    cache_window = int(
-        time.monotonic() // TRUST_CACHE_TTL_SECONDS
+    result, _ = (
+        calculate_trust_result_with_metadata(
+            address
+        )
     )
 
-    return _calculate_trust_result_cached(
-        address,
-        cache_window,
+    return result
+
+
+def refresh_trust_result(
+    address: str,
+) -> TrustResponse:
+    result = _calculate_trust_result_uncached(
+        address
     )
+    trust_cache.set(address, result)
+    return result
 
 
-def clear_trust_cache() -> None:
-    _calculate_trust_result_cached.cache_clear()
+def clear_trust_cache(
+    address: str | None = None,
+) -> None:
+    trust_cache.invalidate(address)
+
+
+def get_trust_cache_stats() -> dict[str, int | float]:
+    return trust_cache.stats()
 
 
 @router.post(
@@ -138,18 +230,27 @@ def clear_trust_cache() -> None:
 )
 def check_wallet(
     payload: CheckWalletRequest,
+    response: Response,
     _api_key: str = Depends(enforce_rate_limit),
 ):
-    address = normalize_address(payload.wallet_address)
+    address = normalize_address(
+        payload.wallet_address
+    )
+    started_at = time.perf_counter()
 
     try:
-        return calculate_trust_result(address)
+        result, cache_status = (
+            calculate_trust_result_with_metadata(
+                address
+            )
+        )
     except RuntimeError as exc:
         raise APIError(
             status_code=503,
             code="BLOCKCHAIN_PROVIDER_ERROR",
             message=(
-                "The blockchain provider is temporarily unavailable."
+                "The blockchain provider is temporarily "
+                "unavailable."
             ),
         ) from exc
     except Exception as exc:
@@ -158,6 +259,24 @@ def check_wallet(
             code="SCORING_FAILED",
             message="Failed to calculate wallet trust.",
         ) from exc
+
+    duration_ms = (
+        time.perf_counter() - started_at
+    ) * 1000
+
+    response.headers[
+        "X-Trust-Cache"
+    ] = cache_status
+
+    if cache_status == "STALE":
+        response.headers["Warning"] = (
+            '110 - "Stale wallet score returned"'
+        )
+    response.headers[
+        "X-Processing-Time-Ms"
+    ] = f"{duration_ms:.2f}"
+
+    return result
 
 
 @router.post(

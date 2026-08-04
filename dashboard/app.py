@@ -1,4 +1,5 @@
 import os
+import time
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -184,6 +185,14 @@ if "trust_result" in st.session_state:
 
     st.subheader("Trust Result")
 
+    refresh_message = st.session_state.pop(
+        "score_refresh_message",
+        None,
+    )
+
+    if refresh_message:
+        st.success(refresh_message)
+
     tier_column, human_column, confidence_column = st.columns(3)
 
     with tier_column:
@@ -291,6 +300,74 @@ if "trust_result" in st.session_state:
 
     with st.expander("View complete trust response"):
         st.json(trust_result)
+
+    st.markdown("#### Background Score Refresh")
+
+    if st.button(
+        "Refresh Score in Background",
+        key="refresh_score_background",
+    ):
+        selected_wallet = st.session_state.get(
+            "selected_wallet"
+        )
+
+        try:
+            accepted = client.refresh_wallet_score(
+                selected_wallet
+            )
+            job_id = accepted["job_id"]
+            status_box = st.empty()
+
+            for _ in range(60):
+                job = client.get_job(job_id)
+                status = job.get(
+                    "status",
+                    "unknown",
+                )
+
+                status_box.info(
+                    f"Score refresh status: {status}"
+                )
+
+                if status == "completed":
+                    result = job.get("result")
+
+                    if not isinstance(result, dict):
+                        raise DashboardAPIError(
+                            "The completed job did not "
+                            "return a score."
+                        )
+
+                    st.session_state[
+                        "trust_result"
+                    ] = result
+
+                    st.session_state[
+                        "score_refresh_message"
+                    ] = (
+                        "Wallet score refreshed "
+                        "successfully."
+                    )
+
+                    st.rerun()
+
+                if status == "failed":
+                    raise DashboardAPIError(
+                        job.get("error")
+                        or (
+                            "The background score "
+                            "refresh failed."
+                        )
+                    )
+
+                time.sleep(0.5)
+
+            st.warning(
+                "The job is still running. Refresh "
+                "the dashboard to check it again."
+            )
+        except DashboardAPIError as exc:
+            st.error(exc.message)
 
     st.markdown("#### Generate Signed Proof")
 
