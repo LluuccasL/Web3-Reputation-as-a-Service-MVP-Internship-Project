@@ -1,6 +1,10 @@
 venv/
+.venv/
 .env
 __pycache__/
+.pytest_cache/
 *.pyc
 .DS_Store
 web3_trust.db
+
+*.egg-info/

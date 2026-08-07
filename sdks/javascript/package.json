@@ -1,0 +1,14 @@
+{
+  "name": "@web3-trust/client",
+  "version": "1.0.0",
+  "description": "Dependency-free Node.js client for the Web3 Trust API",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": "./src/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

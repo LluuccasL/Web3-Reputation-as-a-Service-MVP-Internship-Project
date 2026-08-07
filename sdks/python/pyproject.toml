@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "web3-trust-sdk"
+version = "1.0.0"
+description = "Python client for the Web3 Trust API"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31,<3"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["web3_trust*"]
