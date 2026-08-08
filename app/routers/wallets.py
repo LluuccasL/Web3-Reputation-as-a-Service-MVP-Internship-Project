@@ -7,6 +7,7 @@ from app.database import get_db
 from app.demo_wallets import get_demo_enriched_data
 from app.models import Wallet
 from app.schemas import (
+    DeleteWalletResponse,
     WalletBalanceResponse,
     WalletIngestRequest,
     WalletIngestResponse,
@@ -204,7 +205,15 @@ def queue_wallet_rescore(
     )
 
 
-@router.post("/ingest", response_model=WalletIngestResponse)
+@router.post(
+    "/ingest",
+    response_model=WalletIngestResponse,
+    summary="Ingest or refresh a wallet",
+    description=(
+        "Stores a normalized wallet address and its latest observed block. "
+        "An existing wallet is refreshed without creating a duplicate."
+    ),
+)
 def ingest_wallet(
     payload: WalletIngestRequest,
     db: Session = Depends(get_db),
@@ -275,13 +284,21 @@ def ingest_wallet(
     )
 
 
-@router.get("", response_model=list[WalletResponse])
+@router.get(
+    "",
+    response_model=list[WalletResponse],
+    summary="List ingested wallets",
+)
 def list_wallets(db: Session = Depends(get_db)):
     wallets = db.query(Wallet).order_by(Wallet.id.desc()).all()
     return [wallet_to_response(wallet) for wallet in wallets]
 
 
-@router.get("/{wallet_address}", response_model=WalletResponse)
+@router.get(
+    "/{wallet_address}",
+    response_model=WalletResponse,
+    summary="Get an ingested wallet",
+)
 def get_wallet(
     wallet_address: str,
     db: Session = Depends(get_db),
@@ -290,7 +307,11 @@ def get_wallet(
     return wallet_to_response(wallet)
 
 
-@router.delete("/{wallet_address}")
+@router.delete(
+    "/{wallet_address}",
+    response_model=DeleteWalletResponse,
+    summary="Delete an ingested wallet",
+)
 def delete_wallet(
     wallet_address: str,
     db: Session = Depends(get_db),
@@ -309,6 +330,7 @@ def delete_wallet(
 @router.get(
     "/{wallet_address}/balance",
     response_model=WalletBalanceResponse,
+    summary="Get a wallet balance",
 )
 def get_wallet_balance_route(wallet_address: str):
     address = normalize_address(wallet_address)
@@ -331,6 +353,8 @@ def get_wallet_balance_route(wallet_address: str):
 @router.get(
     "/{wallet_address}/transfers",
     response_model=WalletTransfersResponse,
+    summary="Get recent wallet transfers",
+    description="Returns between one and 50 recent asset transfers.",
 )
 def get_wallet_transfers_route(
     wallet_address: str,
@@ -371,6 +395,11 @@ def get_wallet_transfers_route(
 @router.get(
     "/{wallet_address}/reputation",
     response_model=WalletReputationResponse,
+    summary="Get the base wallet reputation",
+    description=(
+        "Calculates the cumulative Week 2 reputation score from balance "
+        "and recent transfer signals."
+    ),
 )
 def get_wallet_reputation_route(
     wallet_address: str,

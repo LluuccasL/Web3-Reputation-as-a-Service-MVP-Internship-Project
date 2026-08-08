@@ -15,7 +15,16 @@ class JobStatus(str, Enum):
 
 
 class ScoreWalletJobRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "wallet_address": (
+                    "0x1234567890abcdef1234567890abcdef12345678"
+                )
+            }
+        },
+    )
 
     wallet_address: WalletAddress
 

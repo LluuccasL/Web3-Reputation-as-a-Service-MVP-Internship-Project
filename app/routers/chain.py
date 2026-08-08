@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.schemas import LatestBlockResponse
 from app.services.blockchain import get_latest_block_number
 
 
@@ -9,8 +10,16 @@ router = APIRouter(
 )
 
 
-@router.get("/latest-block")
-def latest_block():
+@router.get(
+    "/latest-block",
+    response_model=LatestBlockResponse,
+    summary="Get the latest Ethereum block",
+    description=(
+        "Returns the latest block number reported by the configured "
+        "blockchain provider."
+    ),
+)
+def latest_block() -> LatestBlockResponse:
     try:
         block_number = get_latest_block_number()
         return {

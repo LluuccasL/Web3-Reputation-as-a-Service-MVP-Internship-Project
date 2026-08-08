@@ -12,7 +12,10 @@ API_KEY_HEADER_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(
     name=API_KEY_HEADER_NAME,
     scheme_name="Developer API Key",
-    description="API key required for protected trust and proof endpoints.",
+    description=(
+        "API key required for trust, proof, Sybil, job, and performance "
+        "endpoints. Pass it in the X-API-Key header."
+    ),
     auto_error=False,
 )
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app.errors import APIError
 from app.middleware.rate_limit import enforce_rate_limit
+from app.openapi import protected_responses
 from app.schemas_sybil import (
     SybilAnalyzeRequest,
     SybilAnalyzeResponse,
@@ -20,17 +21,14 @@ router = APIRouter(
     "/analyze",
     response_model=SybilAnalyzeResponse,
     summary="Analyze a group of wallets for Sybil behavior",
-    responses={
-        401: {"description": "Invalid or missing API key."},
-        422: {"description": "Invalid request body."},
-        429: {"description": "Rate limit exceeded."},
-        500: {"description": "Sybil analysis failed."},
-        503: {
-            "description": (
-                "Required blockchain provider data is unavailable."
-            )
-        },
-    },
+    description=(
+        "Builds a wallet relationship graph, identifies coordinated "
+        "clusters, and returns privacy-safe risk explanations."
+    ),
+    responses=protected_responses(
+        success_description="Wallet-group Sybil analysis.",
+        include_provider_failure=True,
+    ),
 )
 def analyze_wallet_group(
     payload: SybilAnalyzeRequest,

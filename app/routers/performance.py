@@ -10,6 +10,7 @@ from app.middleware.rate_limit import (
     enforce_rate_limit,
 )
 from app.models import BackgroundJob
+from app.openapi import protected_responses
 from app.routers.trust import (
     get_trust_cache_stats,
 )
@@ -33,6 +34,14 @@ router = APIRouter(
 @router.get(
     "/cache",
     response_model=CacheStatsResponse,
+    summary="Get trust-cache statistics",
+    description=(
+        "Returns configured cache limits plus hit, miss, eviction, and "
+        "in-flight request statistics."
+    ),
+    responses=protected_responses(
+        success_description="Current trust-cache statistics.",
+    ),
 )
 def get_cache_performance(
     _api_key: str = Depends(
@@ -47,6 +56,14 @@ def get_cache_performance(
 @router.get(
     "/metrics",
     response_model=MonitoringResponse,
+    summary="Get service monitoring metrics",
+    description=(
+        "Returns uptime, route latency, errors, cache performance, and "
+        "background-job counts."
+    ),
+    responses=protected_responses(
+        success_description="Current service monitoring snapshot.",
+    ),
 )
 def get_monitoring_metrics(
     db: Session = Depends(get_db),

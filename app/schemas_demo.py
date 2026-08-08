@@ -16,7 +16,31 @@ class DemoWalletSummary(BaseModel):
 
 
 class DemoWalletCatalogResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "demo_mode_enabled": True,
+                "wallets": [
+                    {
+                        "scenario_key": "established_human",
+                        "address": (
+                            "0xd000000000000000000000000000000000000001"
+                        ),
+                        "label": "Established human wallet",
+                        "description": (
+                            "Long lifespan with varied counterparties."
+                        ),
+                        "expected_outcome": (
+                            "Positive score factors and a likely Gold tier."
+                        ),
+                        "synthetic": True,
+                        "group_id": None,
+                    }
+                ],
+            }
+        },
+    )
 
     demo_mode_enabled: bool
     wallets: list[DemoWalletSummary]

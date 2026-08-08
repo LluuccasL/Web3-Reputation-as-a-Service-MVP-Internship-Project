@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from app.errors import APIError
 from app.middleware.rate_limit import enforce_rate_limit
 from app.models import BackgroundJob
+from app.openapi import protected_responses
 from app.routers.trust import refresh_trust_result
 from app.routers.trust import (
     calculate_trust_result,
@@ -98,6 +99,15 @@ def submit_scoring_job(
     "/jobs/score-wallet",
     response_model=JobAcceptedResponse,
     status_code=202,
+    summary="Submit an asynchronous wallet score",
+    description=(
+        "Queues a wallet trust calculation and deduplicates an equivalent "
+        "active job."
+    ),
+    responses=protected_responses(
+        success_status=202,
+        success_description="Scoring job accepted.",
+    ),
 )
 def submit_score_wallet_job(
     payload: ScoreWalletJobRequest,
@@ -124,6 +134,15 @@ def submit_score_wallet_job(
     "/wallets/{wallet_address}/refresh-score",
     response_model=JobAcceptedResponse,
     status_code=202,
+    summary="Refresh a wallet score asynchronously",
+    description=(
+        "Bypasses the cached value, refreshes the trust result, and stores "
+        "the completed score for later retrieval."
+    ),
+    responses=protected_responses(
+        success_status=202,
+        success_description="Refresh job accepted.",
+    ),
 )
 def refresh_wallet_score(
     wallet_address: WalletAddress,
@@ -147,6 +166,11 @@ def refresh_wallet_score(
 @router.get(
     "/jobs/{job_id}",
     response_model=JobResponse,
+    summary="Get a background job",
+    responses=protected_responses(
+        success_description="Background-job status and result.",
+        include_not_found=True,
+    ),
 )
 def get_job(
     job_id: str,
@@ -161,6 +185,13 @@ def get_job(
 @router.get(
     "/jobs",
     response_model=JobListResponse,
+    summary="List recent background jobs",
+    description=(
+        "Lists up to 100 recent jobs and optionally filters by job status."
+    ),
+    responses=protected_responses(
+        success_description="Recent background jobs.",
+    ),
 )
 def list_jobs(
     limit: int = Query(
@@ -197,6 +228,11 @@ def list_jobs(
 @router.get(
     "/wallets/{wallet_address}/latest-score",
     response_model=LatestScoreResponse,
+    summary="Get the latest completed background score",
+    responses=protected_responses(
+        success_description="Latest completed score for the wallet.",
+        include_not_found=True,
+    ),
 )
 def get_latest_wallet_score(
     wallet_address: WalletAddress,

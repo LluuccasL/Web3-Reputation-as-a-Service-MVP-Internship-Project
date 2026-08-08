@@ -15,6 +15,12 @@ from app.middleware.request_logging import (
 )
 from app.middleware.observability import ObservabilityMiddleware
 from app.routers import chain, jobs, performance, sybil, trust, wallets
+from app.schemas import (
+    APIStatusResponse,
+    HealthResponse,
+    VersionResponse,
+)
+from app.version import API_NAME, API_VERSION
 
 
 log_level_name = os.getenv(
@@ -35,12 +41,54 @@ logging.basicConfig(
 
 Base.metadata.create_all(bind=engine)
 
+OPENAPI_TAGS = [
+    {
+        "name": "service",
+        "description": "Service discovery, health, and version information.",
+    },
+    {
+        "name": "chain",
+        "description": "Current Ethereum provider information.",
+    },
+    {
+        "name": "wallets",
+        "description": "Wallet ingestion, retrieval, and base reputation.",
+    },
+    {
+        "name": "trust",
+        "description": "API-key-protected trust checks and signed proofs.",
+    },
+    {
+        "name": "sybil",
+        "description": "Relationship-based analysis of wallet groups.",
+    },
+    {
+        "name": "background jobs",
+        "description": "Asynchronous scoring and refresh workflows.",
+    },
+    {
+        "name": "performance",
+        "description": "Cache, request, and background-job metrics.",
+    },
+]
+
+
 app = FastAPI(
-    title="Web3 Trust API",
+    title=API_NAME,
     description=(
-        "Proof-of-Human Trust API for wallet reputation scoring"
+        "Developer-facing proof-of-human service for wallet reputation, "
+        "behavior analysis, Sybil detection, and privacy-safe proofs. "
+        "Use the synthetic demo catalog for deterministic evaluation."
     ),
-    version="0.4.0",
+    version=API_VERSION,
+    openapi_tags=OPENAPI_TAGS,
+    contact={
+        "name": "Web3 Trust API project",
+        "url": (
+            "https://github.com/LluuccasL/"
+            "Web3-Reputation-as-a-Service-MVP-Internship-Project"
+        ),
+    },
 )
 
 app.add_exception_handler(
@@ -58,14 +106,39 @@ app.middleware("http")(
 )
 
 
-@app.get("/")
-def root():
-    return {"message": "Web3 Trust API is running"}
+@app.get(
+    "/",
+    response_model=APIStatusResponse,
+    tags=["service"],
+    summary="Confirm that the API is running",
+)
+def root() -> APIStatusResponse:
+    return APIStatusResponse(
+        message="Web3 Trust API is running"
+    )
 
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    tags=["service"],
+    summary="Check service health",
+)
+def health_check() -> HealthResponse:
+    return HealthResponse(status="healthy")
+
+
+@app.get(
+    "/version",
+    response_model=VersionResponse,
+    tags=["service"],
+    summary="Get the public API version",
+)
+def version() -> VersionResponse:
+    return VersionResponse(
+        name=API_NAME,
+        version=API_VERSION,
+    )
 
 
 app.add_middleware(ObservabilityMiddleware)

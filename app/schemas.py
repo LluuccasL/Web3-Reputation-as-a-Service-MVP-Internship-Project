@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -18,6 +18,28 @@ class WalletIngestResponse(BaseModel):
     status: str
     address: str
     last_seen_block: int | None = None
+
+
+class APIStatusResponse(BaseModel):
+    message: str
+
+
+class HealthResponse(BaseModel):
+    status: Literal["healthy"]
+
+
+class VersionResponse(BaseModel):
+    name: str
+    version: str
+
+
+class LatestBlockResponse(BaseModel):
+    latest_block: int
+
+
+class DeleteWalletResponse(BaseModel):
+    status: Literal["deleted"]
+    address: str
 
 
 # ---------------------------------------------------------------------------
@@ -223,3 +245,65 @@ class GeneratedProofResponse(BaseModel):
 
     proof: ProofPayload
     signature: HexDigest
+
+
+class VerifyProofRequest(BaseModel):
+    """Signed proof submitted for validity verification."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": GeneratedProofResponse.model_json_schema().get(
+                "example",
+                {
+                    "proof": ProofPayload.model_json_schema().get(
+                        "example",
+                        {},
+                    ),
+                    "signature": "a" * 64,
+                },
+            )
+        },
+    )
+
+    proof: ProofPayload
+    signature: HexDigest
+
+
+class ProofVerificationResponse(BaseModel):
+    """Result of validating a proof's signature and validity window."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    valid: bool
+    status: Literal["valid", "invalid_or_expired"]
+    proof_id: UUID
+    checked_at: datetime
+    expires_at: datetime
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    request_id: str
+
+
+class ErrorResponse(BaseModel):
+    """Structured error returned by the public protected API."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "error": {
+                    "code": "INVALID_REQUEST",
+                    "message": "The request contains invalid input.",
+                    "request_id": "e4d1e2c4f88b4d68a9a5d031d9d9e37a",
+                },
+                "detail": "The request contains invalid input.",
+            }
+        },
+    )
+
+    error: ErrorDetail
+    detail: str

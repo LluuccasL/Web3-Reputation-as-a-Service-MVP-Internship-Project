@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Response
 
 from app.errors import APIError
 from app.middleware.rate_limit import enforce_rate_limit
+from app.openapi import TRUST_HEADERS, protected_responses
 from app.routers.wallets import (
     calculate_wallet_reputation,
     normalize_address,
@@ -16,12 +17,17 @@ from app.schemas import (
     GeneratedProofResponse,
     GenerateProofRequest,
     HumanLikelihood,
+    ProofVerificationResponse,
     TrustResponse,
     TrustTier,
+    VerifyProofRequest,
     WalletReputationResponse,
 )
 from app.services.monitoring import log_event
-from app.services.proof_service import create_signed_proof
+from app.services.proof_service import (
+    create_signed_proof,
+    verify_signed_proof,
+)
 from app.services.resilience import (
     RETRYABLE_EXCEPTIONS,
     retry_operation,
@@ -216,17 +222,15 @@ def get_trust_cache_stats() -> dict[str, int | float]:
     "/check_wallet",
     response_model=TrustResponse,
     summary="Check a wallet's public trust signals",
-    responses={
-        401: {"description": "Invalid or missing API key."},
-        422: {"description": "Invalid request body."},
-        429: {"description": "Rate limit exceeded."},
-        500: {"description": "Trust calculation failed."},
-        503: {
-            "description": (
-                "The blockchain provider is temporarily unavailable."
-            )
-        },
-    },
+    description=(
+        "Returns privacy-safe likelihood, tier, confidence, and risk flags. "
+        "The response headers expose cache state and processing time."
+    ),
+    responses=protected_responses(
+        success_description="Wallet trust result.",
+        success_headers=TRUST_HEADERS,
+        include_provider_failure=True,
+    ),
 )
 def check_wallet(
     payload: CheckWalletRequest,
@@ -283,17 +287,14 @@ def check_wallet(
     "/generate_proof",
     response_model=GeneratedProofResponse,
     summary="Generate a signed wallet trust proof",
-    responses={
-        401: {"description": "Invalid or missing API key."},
-        422: {"description": "Invalid request body."},
-        429: {"description": "Rate limit exceeded."},
-        500: {"description": "Proof generation failed."},
-        503: {
-            "description": (
-                "The blockchain provider is temporarily unavailable."
-            )
-        },
-    },
+    description=(
+        "Creates an expiring HMAC-signed proof that contains a wallet hash "
+        "instead of the raw wallet address."
+    ),
+    responses=protected_responses(
+        success_description="Signed privacy-safe trust proof.",
+        include_provider_failure=True,
+    ),
 )
 def generate_proof(
     payload: GenerateProofRequest,
@@ -345,6 +346,55 @@ def generate_proof(
         ) from exc
 
 
+@router.post(
+    "/verify_proof",
+    response_model=ProofVerificationResponse,
+    summary="Verify a signed wallet trust proof",
+    description=(
+        "Checks the proof signature and validity window without requiring "
+        "or revealing the original wallet address."
+    ),
+    responses=protected_responses(
+        success_description="Proof verification result.",
+    ),
+)
+def verify_proof(
+    payload: VerifyProofRequest,
+    _api_key: str = Depends(enforce_rate_limit),
+) -> ProofVerificationResponse:
+    try:
+        signed_proof = GeneratedProofResponse.model_validate(
+            payload.model_dump()
+        )
+        is_valid = verify_signed_proof(signed_proof)
+    except RuntimeError as exc:
+        raise APIError(
+            status_code=500,
+            code="PROOF_SERVICE_ERROR",
+            message=(
+                "The proof service is not configured correctly."
+            ),
+        ) from exc
+    except Exception as exc:
+        raise APIError(
+            status_code=500,
+            code="PROOF_VERIFICATION_FAILED",
+            message="Failed to verify proof.",
+        ) from exc
+
+    return ProofVerificationResponse(
+        valid=is_valid,
+        status=(
+            "valid"
+            if is_valid
+            else "invalid_or_expired"
+        ),
+        proof_id=signed_proof.proof.proof_id,
+        checked_at=datetime.now(timezone.utc),
+        expires_at=signed_proof.proof.expires_at,
+    )
+
+
 from app.schemas_enhanced import EnhancedTrustResponse
 from app.services.advanced_features import (
     calculate_advanced_features,
@@ -363,17 +413,14 @@ from app.services.risk_flags import generate_risk_flags
     "/check_wallet/enhanced",
     response_model=EnhancedTrustResponse,
     summary="Check a wallet with enhanced behavioral analysis",
-    responses={
-        401: {"description": "Invalid or missing API key."},
-        422: {"description": "Invalid request body."},
-        429: {"description": "Rate limit exceeded."},
-        500: {"description": "Enhanced trust calculation failed."},
-        503: {
-            "description": (
-                "Required blockchain provider data is unavailable."
-            )
-        },
-    },
+    description=(
+        "Combines base trust with bot heuristics, behavioral features, "
+        "data coverage, explanations, and scored risk flags."
+    ),
+    responses=protected_responses(
+        success_description="Enhanced behavioral trust analysis.",
+        include_provider_failure=True,
+    ),
 )
 def check_wallet_enhanced(
     payload: CheckWalletRequest,
@@ -451,10 +498,13 @@ from app.services.enrichment import _demo_mode_enabled
     "/demo_wallets",
     response_model=DemoWalletCatalogResponse,
     summary="List available synthetic demo wallets",
-    responses={
-        401: {"description": "Invalid or missing API key."},
-        429: {"description": "Rate limit exceeded."},
-    },
+    description=(
+        "Lists stable synthetic scenarios for normal, bot-like, partial-data, "
+        "and Sybil-linked behavior."
+    ),
+    responses=protected_responses(
+        success_description="Deterministic demo wallet catalog.",
+    ),
 )
 def get_demo_wallet_catalog(
     _api_key: str = Depends(enforce_rate_limit),
