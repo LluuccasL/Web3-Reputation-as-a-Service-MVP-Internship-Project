@@ -160,3 +160,28 @@ def test_connection_error_is_converted_to_dashboard_error(monkeypatch):
         exc_info.value.message
         == "Could not connect to the local Trust API."
     )
+
+
+def test_timeout_has_specific_dashboard_message(monkeypatch):
+    client = TrustAPIClient(
+        base_url="http://127.0.0.1:8000",
+        api_key="test-api-key",
+        timeout=120,
+    )
+
+    def raise_timeout(*args, **kwargs):
+        raise requests.Timeout("read timed out")
+
+    monkeypatch.setattr(
+        client.session,
+        "request",
+        raise_timeout,
+    )
+
+    with pytest.raises(DashboardAPIError) as exc_info:
+        client.health()
+
+    assert exc_info.value.message == (
+        "The Trust API request timed out after 120 seconds "
+        "while processing blockchain data."
+    )

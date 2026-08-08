@@ -87,3 +87,12 @@ def reset_trust_cache():
     clear_trust_cache()
     yield
     clear_trust_cache()
+
+
+@pytest.fixture(autouse=True)
+def reset_enrichment_cache():
+    from app.services.enrichment import clear_enrichment_cache
+
+    clear_enrichment_cache()
+    yield
+    clear_enrichment_cache()

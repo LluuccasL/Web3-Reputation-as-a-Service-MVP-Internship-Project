@@ -21,6 +21,9 @@ API_BASE_URL = os.getenv(
     "http://127.0.0.1:8000",
 )
 API_KEY = os.getenv("DASHBOARD_API_KEY", "")
+API_TIMEOUT_SECONDS = int(
+    os.getenv("DASHBOARD_API_TIMEOUT_SECONDS", "120")
+)
 
 st.set_page_config(
     page_title="Web3 Trust Dashboard",
@@ -31,6 +34,7 @@ st.set_page_config(
 client = SybilAPIClient(
     base_url=API_BASE_URL,
     api_key=API_KEY,
+    timeout=API_TIMEOUT_SECONDS,
 )
 
 
@@ -440,7 +444,9 @@ else:
                 continue
 
             try:
-                result = client.check_wallet(wallet_address)
+                result = client.check_wallet_enhanced(
+                    wallet_address
+                )
 
                 analytics_results.append(
                     {
@@ -458,8 +464,8 @@ else:
                             0,
                         ),
                         "risk_flags": result.get(
-                            "risk_flags",
-                            [],
+                            "legacy_risk_flags",
+                            result.get("risk_flags", []),
                         ),
                     }
                 )

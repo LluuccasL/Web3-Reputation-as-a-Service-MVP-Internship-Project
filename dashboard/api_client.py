@@ -57,6 +57,12 @@ class TrustAPIClient:
                 timeout=self.timeout,
                 **kwargs,
             )
+        except requests.Timeout as exc:
+            raise DashboardAPIError(
+                "The Trust API request timed out after "
+                f"{self.timeout} seconds while processing "
+                "blockchain data."
+            ) from exc
         except requests.RequestException as exc:
             raise DashboardAPIError(
                 "Could not connect to the local Trust API."

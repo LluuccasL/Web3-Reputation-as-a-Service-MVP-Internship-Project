@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.services import blockchain
+from app.services.trust_cache import TTLCache
 
 
 def _failure_message(error: Exception) -> str:
@@ -158,6 +159,41 @@ from app.demo_wallets import (
 
 _live_enrich_wallet = enrich_wallet
 
+ENRICHMENT_CACHE_TTL_SECONDS = max(
+    1,
+    int(
+        _os.getenv(
+            "ENRICHMENT_CACHE_TTL_SECONDS",
+            "300",
+        )
+    ),
+)
+ENRICHMENT_CACHE_MAX_SIZE = max(
+    1,
+    int(
+        _os.getenv(
+            "ENRICHMENT_CACHE_MAX_SIZE",
+            "256",
+        )
+    ),
+)
+
+enrichment_cache: TTLCache[dict[str, Any]] = TTLCache(
+    ttl_seconds=ENRICHMENT_CACHE_TTL_SECONDS,
+    max_size=ENRICHMENT_CACHE_MAX_SIZE,
+)
+
+
+def clear_enrichment_cache(
+    address: str | None = None,
+) -> None:
+    cache_key = (
+        address.strip().lower()
+        if isinstance(address, str)
+        else None
+    )
+    enrichment_cache.invalidate(cache_key)
+
 
 def _demo_mode_enabled() -> bool:
     return _os.getenv(
@@ -183,4 +219,9 @@ def enrich_wallet(address: str) -> dict:
         if demo_data is not None:
             return demo_data
 
-    return _live_enrich_wallet(address)
+    cache_key = address.strip().lower()
+    result, _cache_hit = enrichment_cache.get_or_compute(
+        cache_key,
+        lambda: _live_enrich_wallet(address),
+    )
+    return result

@@ -76,3 +76,31 @@ def test_regular_wallet_stays_on_live_path(
 
     assert result is live_result
     assert result["source"] == "live"
+
+
+def test_regular_wallet_reuses_cached_live_enrichment(
+    monkeypatch,
+):
+    monkeypatch.setenv("DEMO_MODE", "true")
+    calls = []
+
+    def live_enrichment(address: str):
+        calls.append(address)
+        return {
+            "address": address,
+            "source": "live",
+        }
+
+    monkeypatch.setattr(
+        enrichment,
+        "_live_enrich_wallet",
+        live_enrichment,
+    )
+
+    first = enrichment.enrich_wallet(LIVE_ADDRESS)
+    second = enrichment.enrich_wallet(
+        LIVE_ADDRESS.upper().replace("0X", "0x")
+    )
+
+    assert first is second
+    assert calls == [LIVE_ADDRESS]
